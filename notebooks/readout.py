@@ -21,11 +21,12 @@ def _():
     import marimo as mo
     import torch
 
-    from j_faithfulness.lens import load, read_out, readouts_to_json
+    from j_faithfulness.lens import BAND, load, read_out, readouts_to_json
     from j_faithfulness.protocols import USER_OPEN, decision_prompt
     from j_faithfulness.verbalize import fence, normalize, verbalize
 
     return (
+        BAND,
         USER_OPEN,
         decision_prompt,
         fence,
@@ -253,22 +254,29 @@ def _(answer_ranks, intermediate_ranks, mo):
 
 
 @app.cell
-def _(mo):
-    band = mo.ui.range_slider(start=0, stop=30, value=[8, 21], label="Band")
-    k = mo.ui.slider(1, 10, value=10, label="k")
-    min_tf = mo.ui.slider(0.0, 3.0, step=0.1, value=0.5, label="min_tf")
+def _(BAND, mo):
+    band = mo.ui.range_slider(start=0, stop=30, value=list(BAND), label="Band")
+    k = mo.ui.slider(1, 10, value=5, label="k")
+    min_tf = mo.ui.slider(0.0, 3.0, step=0.1, value=1.0, label="min_tf")
     min_score = mo.ui.slider(0.0, 5.0, step=0.1, value=1.0, label="min_score")
-    mo.hstack([band, k, min_tf, min_score], justify="start")
-    return band, k, min_score, min_tf
+    min_zipf = mo.ui.slider(0.0, 5.0, step=0.1, value=2.5, label="min_zipf")
+    mo.hstack([band, k, min_tf, min_score, min_zipf], justify="start")
+    return band, k, min_score, min_tf, min_zipf
 
 
 @app.cell
-def _(ITEMS, band, k, min_score, min_tf, results, verbalize):
+def _(ITEMS, band, k, min_score, min_tf, min_zipf, results, verbalize):
     def j_of(slug, last_only=False):
         r = results[slug]["readout"].in_band(*band.value)
         if last_only:
             r.positions, r.top = r.positions[-1:], r.top[-1:]
-        return verbalize(r, k=k.value, min_tf=min_tf.value, min_score=min_score.value)
+        return verbalize(
+            r,
+            k=k.value,
+            min_tf=min_tf.value,
+            min_score=min_score.value,
+            min_zipf=min_zipf.value,
+        )
 
     def hit(j, item):
         found = {w.casefold() for row in j for w in row.words}
@@ -348,6 +356,7 @@ def _(
     k,
     min_score,
     min_tf,
+    min_zipf,
     results,
     summary,
 ):
@@ -361,7 +370,7 @@ def _(
         print(_row)
     print(
         f"\n== J: band={band.value} k={k.value} min_tf={min_tf.value} "
-        f"min_score={min_score.value}"
+        f"min_score={min_score.value} min_zipf={min_zipf.value}"
     )
     for _row in summary:
         print(_row)

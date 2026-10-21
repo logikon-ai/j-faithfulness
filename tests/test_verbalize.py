@@ -8,6 +8,7 @@ from j_faithfulness.verbalize import (
     document,
     echoes,
     fence,
+    is_english,
     is_latin,
     is_word_like,
     tf_idf,
@@ -62,10 +63,26 @@ def test_echoes():
     ctx = words("My friend is allergic to the main ingredient of guacamole.")
     for w in ["friend", "Friend", "friends", "allergy", "allergies", "ingredients"]:
         assert echoes(w, ctx), w
-    for w in ["avocado", "buddy", "my5", "main1"]:
-        assert not echoes(w, ctx) or w == "main1", w
-    assert echoes("main", ctx)  # exact, though shorter than the prefix
-    assert not echoes("mains", ctx)  # "main" is too short for the prefix rule
+    for w in ["avocado", "buddy", "mainly", "isle"]:
+        assert not echoes(w, ctx), w
+    # Short context words: exact, or with a suffix.
+    for w in ["main", "mains", "tos"]:
+        assert echoes(w, ctx), w
+
+
+def test_echoes_suffixes_of_short_words():
+    ctx = words("Should the town fund a bus line?")
+    for w in ["funds", "funded", "funding", "buses", "towns", "lines"]:
+        assert echoes(w, ctx), w
+    for w in ["fun", "busy", "township"]:
+        assert not echoes(w, ctx), w
+
+
+def test_is_english():
+    for w in ["Italy", "Shakespeare", "Nairobi", "venom", "avocado", "bees"]:
+        assert is_english(w, 2.5), w
+    for w in ["akespeare", "dney", "useum", "hoặc", "atau", "keduanya"]:
+        assert not is_english(w, 2.5), w
 
 
 def test_tf_idf_leaves_out_the_scored_position():
@@ -100,7 +117,9 @@ def test_verbalize_ranks_by_tf_idf_and_drops_generic_words():
 
 
 def test_verbalize_latin_only_can_be_off():
-    j = verbalize(generic_and_specific(), min_score=0.1, latin_only=False)
+    j = verbalize(
+        generic_and_specific(), min_score=0.1, latin_only=False, min_zipf=None
+    )
     assert j[-1] == Row(3, ["意大利"])
 
 
@@ -119,15 +138,16 @@ def test_verbalize_drops_context_echo_and_drop_words():
         [["Portugal"]],
         context="Does the country shaped like a boot use the euro?",
     )
-    # boots: prefix of boot is too short, so it stays; euro is in the context.
-    assert verbalize(r, min_score=0.1) == [
-        Row(0, ["Italy", "boots"]),
+    # boots echoes boot (suffix); euro is in the context.
+    assert verbalize(r, min_tf=0.5, min_score=0.1) == [
+        Row(0, ["Italy"]),
         Row(2, ["Portugal"]),
     ]
-    assert verbalize(r, min_score=0.1, drop=["italy", "boots"]) == [
+    assert verbalize(r, min_tf=0.5, min_score=0.1, drop=["italy"]) == [
         Row(2, ["Portugal"])
     ]
-    kept = verbalize(r, min_score=0.1, drop_context=False)
+    kept = verbalize(r, min_tf=0.5, min_score=0.1, drop_context=False)
+    assert kept[0] == Row(0, ["Italy", "boots"])
     assert Row(1, ["euro"]) in kept
 
 

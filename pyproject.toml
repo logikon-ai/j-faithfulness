@@ -15,6 +15,7 @@ dependencies = [
     "torch",
     "transformers>=5.5",
     "marimo",
+    "wordfreq>=3.1.1",
 ]
 
 [dependency-groups]

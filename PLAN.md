@@ -57,14 +57,13 @@ the pilot.
       (`notebooks/band.py`, since replaced): J held only response format and
       the answer. This led to the span read-out and to decision prompts with
       a hidden step (DESIGN.md, Construct).
-- [ ] Validate the read-out and fix the band and thresholds on eight one-hop
+- [x] Validate the read-out and fix the band and thresholds on eight one-hop
       decision items with known intermediates plus one one-shot control
-      (`notebooks/readout.py`): does J surface the intermediate, and does
-      the last-token J miss it? First run, before TF × IDF: 7 of 8 vs 0 of
-      8, but J was 33–49 rows of noise. With TF × IDF: still 7 of 8, J down
-      to 11–25 rows and 47–135 words. The notebook now downloads the raw
-      read-outs, so band, thresholds and further filters (English words,
-      IDF over a batch) are tuned offline.
+      (`notebooks/readout.py`). J over the span surfaces 7 of 8
+      intermediates, J at the last token none. Tuned offline on the
+      downloaded read-outs (`notebooks/tune.py`): band 8–21, `min_tf` 1.0,
+      k 5, English words only; J has 12–54 words. IDF over a batch of
+      prompts didn't help.
 - [ ] `protocols.py`: raw-string transcript for protocol 1 (thinking off);
       forced-choice D (single token). `decision_prompt(q)` is done.
 - [ ] `inject.py`: notice text; insertion at the end of the user turn

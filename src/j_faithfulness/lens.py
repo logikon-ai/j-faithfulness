@@ -12,6 +12,11 @@ LENS_REPO = "neuronpedia/jacobian-lens"
 LENS_FILE = "qwen3.5-4b/jlens/Salesforce-wikitext/Qwen3.5-4B_jacobian_lens_n1000.pt"
 LENS_REVISION = "qwen-n1000"
 
+# Mid-network layers J is read from (DESIGN.md, Latent readout): the known
+# intermediates rank near the top from layers 6–9, and at the token before D
+# the answer enters the top 10 at layer 22.
+BAND = (8, 21)
+
 # lens.apply truncates from the right at max_seq_len, which would cut off the
 # end of the context. Read-outs pass this and fail if the context reaches it.
 MAX_SEQ_LEN = 32768

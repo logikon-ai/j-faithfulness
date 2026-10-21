@@ -117,9 +117,10 @@ J(X) is built in four steps:
    band. A word's position is its last subtoken; punctuation and special
    tokens count as words. The band is the mid-network layers: early layers
    are noise and word fragments, and late layers already contain the next
-   output. Provisionally layers 8–21: the intermediates rank near the top
-   from layers 6–9, and at the token before D the answer letter enters the
-   top 10 at layer 22.
+   output. Layers 8–21: the intermediates rank near the top from layers
+   6–9, and at the token before D the answer letter enters the top 10 at
+   layer 22. Layers 8–11 add associations, not fragments (tragedy, Henry
+   for Hamlet; Commonwealth for the boot).
 2. **Score by TF × IDF.** Each ranked list (one position, one layer) is a
    document. At a position, a word's TF is the sum of 1/(rank + 1) over the
    band's layers. Its IDF is log((N + 1) / (df + 1)), counting only the
@@ -129,17 +130,27 @@ J(X) is built in four steps:
    multilingual "or" at "A or B". Token variants count as one word (stripped,
    NFKC-normalized and casefolded, so ` A`, `A`, the fullwidth `Ａ` and `a`
    merge; J shows the form at the best rank). The IDF comes from the
-   read-out itself, with no reference corpus.
+   read-out itself, with no reference corpus. Pooling documents over
+   several prompts doesn't help: a format word that recurs at the same rate
+   in every prompt (Option at the option brackets) keeps the same N / df.
 3. **Filter.** Keep word-like tokens (jlens's `mask_display` rule) of at
-   least two characters in Latin script: Q and J are in English, and the other scripts mostly repeat
-   English words (意大利 = Italy) or are format words. Keep words with TF ≥
-   `min_tf`, since a word found at only one position gets the highest IDF
-   and rare garbage would otherwise be boosted, and with TF × IDF ≥
-   `min_score`. Drop words of the context and words sharing their first
-   five letters with one (allergy, allergies ← allergic): at a word of Q the
-   lens partly predicts Q's next word, and in protocol 4 this also keeps R's
-   own words out of J. Positions left without words are omitted.
-4. **Verbalize** each remaining position as one row: its top-k words (k = 10)
+   least two characters that are English words or names: Latin script, and
+   an English frequency of at least 2.5 on the Zipf scale
+   ([wordfreq](https://github.com/rspeer/wordfreq)). Q and J are in
+   English; the other scripts mostly repeat English words (意大利 = Italy)
+   or are format words, and the frequency cut removes subword fragments
+   (akespeare, dney) and other languages' "or" (hoặc, atau) while keeping
+   names like Nairobi (3.5). Keep words with TF ≥ `min_tf` = 1.0 (rank 0 in
+   one layer, or steady presence across several), since a word found at
+   only one position gets the highest IDF and rare garbage would otherwise
+   be boosted; this threshold matters most for J's length. Keep words with
+   TF × IDF ≥ `min_score` = 1.0. Drop words of the context and their
+   variants: words sharing their first five letters with a context word
+   (allergy, allergies ← allergic) and context words with a suffix (funds,
+   funding, buses ← fund, bus). At a word of Q the lens partly predicts Q's
+   next word, and in protocol 4 this also keeps R's own words out of J.
+   Positions left without words are omitted.
+4. **Verbalize** each remaining position as one row: its top-k words (k = 5)
    by TF × IDF. Rows appear in context order and carry no reference to the
    word they come from.
 
@@ -306,23 +317,15 @@ small set of forced-choice questions, as scoped above.
 
 ## Open questions
 
-- **Band.** 8–21 is provisional; the lower end depends on whether early
-  layers add word fragments once filtered.
-- **Thresholds.** `min_tf` (0.5), `min_score` (1.0) and k set how long J
-  is; they are tuned on the validation items.
+- **Band and thresholds.** Tuned on eight one-hop items: J has 6–17 rows
+  and 12–54 words and keeps seven of the eight intermediates. They need
+  checking on more items and other protocols.
 - **TF.** Summed reciprocal rank rewards words that persist across layers;
   the best rank in any layer would reward peaks.
-- **Echo beyond prefixes.** Synonyms of context words (author → writer) pass
-  the prefix rule.
-- **Fragments and foreign words.** Subword fragments (akespeare, dney,
-  useum) and Latin-script words of other languages (hoặc, atau for "or")
-  pass the filters. Candidate: keep only known English words and names
-  (`wordfreq`), tested offline first.
-- **IDF over several read-outs.** Document counts from several read-outs
-  add up, so IDF could also be taken over a batch of prompts. That would
-  push down what recurs at the same template positions across prompts
-  (Option, Choice at the options; my, wants at Q's opening), which one
-  read-out can't. Tested offline first.
+- **Echo beyond word forms.** Synonyms of context words (son → boy, child;
+  largest → tallest) pass the filters.
+- **Residual generic words.** User words at Q's opening (my, kids, wanna)
+  and a few Choice/Option at the option brackets remain.
 - **Long spans.** A read-out holds `[positions, vocab]` logits per layer, so a
   long R needs chunking.
 - **Salience.** Beyond the known intermediate, are "the n most salient"
