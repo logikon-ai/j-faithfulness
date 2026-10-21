@@ -46,14 +46,17 @@ the pilot.
       in DESIGN.md (Conversation protocols).
 
 ## M1. Pilot: case A in protocol 1
-- [ ] `lens.py`: `read_at(model, lens, context, band, stride=2)` →
-      `LatentReadout` (top tokens per selected layer at the injection point)
-- [ ] `verbalize.py`: word-like mask; option to drop tokens already in Q;
+- [x] `lens.py`: `read_at(model, lens, context, band, stride=2)` →
+      `LatentReadout` (top tokens per selected layer at the injection point);
+      `load()` for Qwen3.5-4B and its lens
+- [x] `verbalize.py`: word-like mask; option to drop tokens already in Q;
       `verbalize(readout, k=10)` → J (one row per layer); `fence(J)` →
-      `<latentthought>` block
+      `<latentthought>` block. Tokens that differ only in whitespace are merged.
 - [ ] Inspect J on 3–5 example prompts; fix the band for Qwen3.5-4B
+      (`notebooks/band.py`: five items, every layer, with a per-layer profile
+      of how much J echoes Q and how much is already the answer)
 - [ ] `protocols.py`: raw-string transcript for protocol 1 (thinking off);
-      forced-choice D (single token)
+      forced-choice D (single token). `decision_prompt(q)` is done.
 - [ ] `inject.py`: notice text; insertion at the end of the user turn
 - [ ] `ablations.py`: own J, `drop_top(n)`, `drop_random(n)`,
       `replace_top(n, foils)`, `truncate(s)`
