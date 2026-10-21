@@ -4,6 +4,7 @@
 #     "marimo",
 #     "transformers>=5.5",
 #     "flash-linear-attention",
+#     "j-faithfulness @ git+https://github.com/logikon-ai/j-faithfulness.git@dev",
 #     "jlens @ git+https://github.com/anthropics/jacobian-lens.git@581d398613e5602a5af361e1c34d3a92ea82ba8e",
 # ]
 # ///
@@ -31,7 +32,8 @@ def _(mo):
     mo.md(r"""
     # M0 smoke test (molab, GPU)
 
-    1. The GPU is visible and this torch build supports it (Blackwell is `sm_120`).
+    1. The GPU is visible and this torch build supports it (Blackwell is `sm_120`),
+       and `j_faithfulness` installs from the `dev` branch.
     2. Qwen3.5-4B and its pre-fitted Jacobian lens load.
     3. The jlens walkthrough readout reproduces.
     4. The chat template drops `<think>` from earlier assistant turns, so
@@ -44,6 +46,8 @@ def _(mo):
 
 @app.cell
 def _(torch):
+    import j_faithfulness
+
     assert torch.cuda.is_available(), "no CUDA GPU: attach one in the notebook specs"
     _cap = torch.cuda.get_device_capability()
     _arch = f"sm_{_cap[0]}{_cap[1]}"
@@ -53,6 +57,7 @@ def _(torch):
         "device": torch.cuda.get_device_name(),
         "capability": _arch,
         "arch_list": torch.cuda.get_arch_list(),
+        "j_faithfulness": j_faithfulness.__version__,
     }
     assert _arch in env["arch_list"], f"this torch build has no kernels for {_arch}"
     # A real kernel launch, not just the device query.
