@@ -13,7 +13,7 @@ import re
 import unicodedata
 from collections import Counter
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from wordfreq import zipf_frequency
 
@@ -29,10 +29,12 @@ ECHO_SUFFIXES = ("s", "es", "ed", "ing", "er", "ers")
 
 @dataclass
 class Row:
-    """The words of J at one context position, best first."""
+    """The words of J at one context position, best first, with their
+    TF × IDF scores (salience for the edits in ablations.py)."""
 
     position: int
     words: list[str]
+    scores: list[float] = field(default_factory=list, compare=False)
 
 
 J = list[Row]
@@ -179,7 +181,8 @@ def verbalize(
             key=lambda sw: -sw[0],
         )
         if ranked:
-            j.append(Row(position, [w for _, w in ranked[:k]]))
+            top = ranked[:k]
+            j.append(Row(position, [w for _, w in top], [sc for sc, _ in top]))
     return j
 
 

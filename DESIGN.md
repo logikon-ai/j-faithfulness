@@ -309,6 +309,7 @@ j_faithfulness/
   ablations.py  own / foreign / swap / drop_top / replace_top / truncate / shuffle / mix
   compare.py    D: Brier; R/E: text distances; teacher-forced log P(X); noise floor;
                 total vs direct effect (case B); A–C rank agreement
+  items.py      built-in decision prompts with known intermediates and foils
 ```
 
 The notebook (`notebooks/demo.py`, marimo) walks through cases A, B and C on a

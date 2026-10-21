@@ -64,15 +64,19 @@ the pilot.
       downloaded read-outs (`notebooks/tune.py`): band 8–21, `min_tf` 1.0,
       k 5, English words only; J has 12–54 words. IDF over a batch of
       prompts didn't help.
-- [ ] `protocols.py`: raw-string transcript for protocol 1 (thinking off);
-      forced-choice D (single token). `decision_prompt(q)` is done.
-- [ ] `inject.py`: notice text; insertion at the end of the user turn
-- [ ] `ablations.py`: own J, `swap(word, foil)`, `drop_top(n)`,
-      `drop_random(n)`, `replace_top(n, foils)`, `truncate(s)`
-- [ ] `compare.py`: Brier score of D′ against D
-- [ ] Notebook v1: Q → D → J → conditions (incl. no J, notice only,
-      intermediate swapped vs random word swapped) → contrast table and plot;
-      the one-hop items as the built-in set
+- [x] `protocols.py`: raw-string transcript for protocol 1 (thinking off);
+      forced-choice D (single token): `option_probs` (not renormalized, so
+      mass leaving the options shows), `decision`
+- [x] `inject.py`: notice text; insertion at the end of the user turn
+- [x] `ablations.py`: `swap(mapping)`, `swap_random` (the same foils in
+      place of random words), `drop_top(n)`, `drop_random(n)`,
+      `replace_top(n, foils)`, `truncate(s)`; salience is TF × IDF
+- [x] `compare.py`: Brier score of D′ against D; log P(D)
+- [x] `items.py`: the one-hop items, with foils that imply the other answer
+- [ ] Notebook v1 (`notebooks/demo.py`): Q → D → J → conditions (no J,
+      notice only, own J, intermediate → foil vs random word → foil, drop
+      top 3 vs drop random 3) → contrast table and plot. Written and
+      dry-run on CPU; not yet run on molab.
 
 ## M2. Case C (protocol 3), with agreement with A
 - [ ] `protocols.py`: explanation turn (thinking off); force the original D
