@@ -111,9 +111,20 @@ def _(ITEMS, decision_prompt, hf_model, lens, model, read_at, torch):
 
 @app.cell
 def _(ITEMS, results, verbalize, words):
+    # Function words fill early and middle rows regardless of Q, so they don't
+    # count as echoing it.
+    FUNCTION_WORDS = words(
+        "a an and answer at be both but by can do either for from in is it its "
+        "neither new not of on only or should that the their they this to what "
+        "which with you"
+    )
+
     def layer_profile(item, readout):
-        """Per layer: share of the top 10 that echoes Q, and that is an option."""
-        q_words = words(item["q"]) - {o.casefold() for o in item["options"]}
+        """Per layer: share of the top 10 that echoes a content word of Q, and
+        that is an option."""
+        q_words = (
+            words(item["q"]) - FUNCTION_WORDS - {o.casefold() for o in item["options"]}
+        )
         rows = verbalize(readout, k=10)
         return [
             (
@@ -147,6 +158,22 @@ def _(mo, profile):
             mo.ui.table(profile, selection=None, pagination=False),
         ]
     )
+    return
+
+
+@app.cell
+def _(ITEMS, profile, results, verbalize):
+    # Plain-text dump of everything above and below: an .ipynb export keeps
+    # printed text, but renders tables as images.
+    for _row in profile:
+        print(_row)
+    for _item in ITEMS:
+        _r = results[_item["slug"]]
+        print(f"\n== {_item['slug']}  P(options) = {_r['probs']}")
+        for _l, _words in zip(
+            _r["readout"].layers, verbalize(_r["readout"], k=10), strict=True
+        ):
+            print(f"{_l:>2}: {', '.join(_words)}")
     return
 
 

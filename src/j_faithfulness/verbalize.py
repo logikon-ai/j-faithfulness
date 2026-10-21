@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable
 
 from j_faithfulness.lens import LatentReadout
@@ -29,16 +30,16 @@ def words(text: str) -> set[str]:
 def verbalize(readout: LatentReadout, k: int = 10, drop: Iterable[str] = ()) -> J:
     """The top ``k`` word-like tokens of each layer, in rank order.
 
-    Tokens that differ only in surrounding whitespace (``" A"`` / ``"A"``) are
-    merged at the better rank. Words in ``drop`` (compared casefolded) are left
-    out.
+    Tokens are stripped and NFKC-normalized, so ``" A"``, ``"A"`` and the
+    fullwidth ``"Ａ"`` become one word, kept at the best rank. Words in ``drop``
+    (compared casefolded) are left out.
     """
     dropped = {w.casefold() for w in drop}
     rows = []
     for tokens in readout.tokens:
         row: list[str] = []
         for token in tokens:
-            word = token.strip()
+            word = unicodedata.normalize("NFKC", token.strip())
             if (
                 is_word_like(word)
                 and word not in row

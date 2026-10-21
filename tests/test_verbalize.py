@@ -20,7 +20,7 @@ def test_is_word_like():
 
 def test_verbalize_filters_merges_and_truncates():
     r = readout(
-        [" **", " Neither", "\n\n", "Neither", " Both", "A", " A", "?", "B"],
+        [" **", " Neither", "\n\n", "Neither", " Both", "A", " A", "Ａ", "?", "B"],
         [" library", "bus", " Library"],
     )
     assert verbalize(r, k=3) == [
