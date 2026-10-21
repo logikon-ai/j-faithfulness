@@ -44,4 +44,6 @@ lens_logits, model_logits, input_ids = lens.apply(
 ## Conventions
 
 - src layout, uv, ruff, pytest.
+- All work happens on `dev`. `main` holds only a work-in-progress README until
+  the first release, when `dev` is merged into it.
 - Model-free code is tested locally; GPU work runs on molab (see PLAN.md).

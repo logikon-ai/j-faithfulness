@@ -30,10 +30,26 @@ Experiments using the method live in a separate repo and import this package.
 | 3 |   | ✓ | Q → D · "Explain." → E |
 | 4 | ✓ | ✓ | Q → `<think>`R`</think>` D · "Explain." → E |
 
-Prompts are built as raw strings, not with `apply_chat_template`. Qwen's
-template may strip `<think>` content from earlier assistant turns, which would
-remove R from the context both after a split turn and in the explanation turn.
-We'll check this against the Qwen3.5 template when setting up the repo.
+Prompts are built as raw strings, not with `apply_chat_template`. The Qwen3.5
+template renders every assistant turn before the last user turn without its
+`<think>` block (both a real R and the empty block of a thinking-off turn), so
+it would remove R from the context after a split turn and in the explanation
+turn. The raw strings keep each assistant turn exactly as it was generated:
+
+```
+<|im_start|>user\n{Q}<|im_end|>\n
+<|im_start|>assistant\n<think>\n\n</think>\n\n{D}          ← protocols 1, 3
+<|im_start|>assistant\n<think>\n{R}\n</think>\n\n{D}       ← protocols 2, 4
+<|im_end|>\n<|im_start|>user\nExplain.<|im_end|>\n
+<|im_start|>assistant\n<think>\n\n</think>\n\n{E}          ← protocols 3, 4
+```
+
+There is no BOS token and no default system prompt. `<think>`, `</think>`,
+`<|im_start|>` and `<|im_end|>` are single special tokens when the raw string
+is tokenized, and single-letter options such as `A` are single tokens with no
+leading space after `</think>\n\n`. `lens.apply` truncates from the right at
+`max_seq_len` (default 512), which would cut off the injection point, so we
+always pass a `max_seq_len` above the transcript length.
 
 
 ## Construct: local faithfulness (reason-responsiveness)

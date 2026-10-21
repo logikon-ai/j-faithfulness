@@ -20,16 +20,25 @@ the pilot.
   GitHub, then reinstall.
 
 ## M0. Scaffolding
-- [ ] `pyproject.toml` (src layout, uv). Dependencies: `jlens` from git,
+- [x] `pyproject.toml` (src layout, uv). Dependencies: `jlens` from git,
       `torch`, `transformers>=5.5`, `marimo`. Dev dependencies: `pytest`, `ruff`.
-- [ ] `src/j_faithfulness/__init__.py`, `tests/`, `notebooks/`
+- [x] `src/j_faithfulness/__init__.py`, `tests/`, `notebooks/`
+      (`tests/tiny.py` is vendored from jlens, which doesn't ship its tests)
 - [ ] molab setup: find out how a notebook installs packages (probably inline
       script metadata); install `jlens` and this repo from git (needs the repo
       public, or auth); check that torch supports the Blackwell GPU.
+      `notebooks/smoke.py` declares its dependencies as inline script metadata
+      and leaves torch to molab's preinstalled CUDA build. Still to confirm on
+      molab: that the metadata, including the git URL, is honoured. The repo
+      goes public with the work on `dev`; molab installs this package from
+      `git+https://github.com/logikon-ai/j-faithfulness.git@dev`, with a forced
+      reinstall after each push.
 - [ ] Smoke test on molab: load Qwen3.5-4B and its lens and reproduce the
-      jlens walkthrough readout.
-- [ ] Check whether the Qwen3.5 chat template strips `<think>` content from
-      earlier turns; work out the raw-string format.
+      jlens walkthrough readout. `notebooks/smoke.py` is ready to run; it
+      also checks the GPU arch and shows a first protocol-1 readout.
+- [x] Check whether the Qwen3.5 chat template strips `<think>` content from
+      earlier turns; work out the raw-string format. It does; the format is
+      in DESIGN.md (Conversation protocols).
 
 ## M1. Pilot: case A in protocol 1
 - [ ] `lens.py`: `read_at(model, lens, context, band, stride=2)` →
