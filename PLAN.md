@@ -24,17 +24,18 @@ the pilot.
       `torch`, `transformers>=5.5`, `marimo`. Dev dependencies: `pytest`, `ruff`.
 - [x] `src/j_faithfulness/__init__.py`, `tests/`, `notebooks/`
       (`tests/tiny.py` is vendored from jlens, which doesn't ship its tests)
-- [ ] molab setup: find out how a notebook installs packages (probably inline
+- [x] molab setup: find out how a notebook installs packages (probably inline
       script metadata); install `jlens` and this repo from git (needs the repo
       public, or auth); check that torch supports the Blackwell GPU.
       `notebooks/smoke.py` declares its dependencies as inline script metadata
       and leaves torch to molab's preinstalled CUDA build (torch 2.11, CUDA
       13.0, with `sm_120` kernels: the Blackwell GPU works). molab installs
-      the metadata's dependencies itself, including `jlens` from its git URL.
-      Left: installing this repo there, once it's public. The repo goes
-      public with the work on `dev`; molab installs this package from
-      `git+https://github.com/logikon-ai/j-faithfulness.git@dev`, with a forced
-      reinstall after each push.
+      the metadata's dependencies itself, including `jlens` from its git URL,
+      and this package from
+      `git+https://github.com/logikon-ai/j-faithfulness.git@dev` (the repo is
+      public; work stays on `dev`). The preinstalled torch survives the
+      install. A session that's still running needs a forced reinstall after
+      each push.
 - [x] Smoke test on molab: load Qwen3.5-4B and its lens and reproduce the
       jlens walkthrough readout. `notebooks/smoke.py`: at the "boot" token the
       J-lens shows boots/heel at layer 8 and Italy at layer 16, where the
