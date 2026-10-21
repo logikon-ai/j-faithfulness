@@ -46,24 +46,29 @@ the pilot.
       in DESIGN.md (Conversation protocols).
 
 ## M1. Pilot: case A in protocol 1
-- [x] `lens.py`: `read_at(model, lens, context, band, stride=2)` →
-      `LatentReadout` (top tokens per selected layer at the injection point);
-      `load()` for Qwen3.5-4B and its lens
-- [x] `verbalize.py`: word-like mask; option to drop tokens already in Q;
-      `verbalize(readout, k=10)` → J (one row per layer); `fence(J)` →
-      `<latentthought>` block. Tokens that differ only in whitespace are merged.
-- [ ] Inspect J on 3–5 example prompts; fix the band for Qwen3.5-4B
-      (`notebooks/band.py`: five items, every layer, with a per-layer profile
-      of how much J echoes Q and how much is already the answer)
+- [x] `lens.py`: `read_out(model, lens, context, band, positions=None)` →
+      `LatentReadout` (top tokens at every word of the span and every layer
+      of the band); `load()` for Qwen3.5-4B and its lens
+- [x] `verbalize.py`: word-like mask; summed reciprocal rank over the band;
+      drop context words, generic words and low scores; `verbalize(readout,
+      k=10)` → J (one row per position); `fence(J)` → `<latentthought>` block
+- [x] First read-outs at the single token before D on five one-shot items
+      (`notebooks/band.py`, since replaced): J held only response format and
+      the answer. This led to the span read-out and to decision prompts with
+      a hidden step (DESIGN.md, Construct).
+- [ ] Validate the read-out and fix the band and thresholds on eight one-hop
+      decision items with known intermediates plus one one-shot control
+      (`notebooks/readout.py`): does J surface the intermediate, and does
+      the last-token J miss it?
 - [ ] `protocols.py`: raw-string transcript for protocol 1 (thinking off);
       forced-choice D (single token). `decision_prompt(q)` is done.
 - [ ] `inject.py`: notice text; insertion at the end of the user turn
-- [ ] `ablations.py`: own J, `drop_top(n)`, `drop_random(n)`,
-      `replace_top(n, foils)`, `truncate(s)`
+- [ ] `ablations.py`: own J, `swap(word, foil)`, `drop_top(n)`,
+      `drop_random(n)`, `replace_top(n, foils)`, `truncate(s)`
 - [ ] `compare.py`: Brier score of D′ against D
-- [ ] Notebook v1: Q → D → J → conditions (incl. no J, notice only) →
-      contrast table and plot; small built-in item set (5–10 forced-choice
-      questions)
+- [ ] Notebook v1: Q → D → J → conditions (incl. no J, notice only,
+      intermediate swapped vs random word swapped) → contrast table and plot;
+      the one-hop items as the built-in set
 
 ## M2. Case C (protocol 3), with agreement with A
 - [ ] `protocols.py`: explanation turn (thinking off); force the original D

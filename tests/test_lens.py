@@ -1,7 +1,7 @@
 import jlens
 import pytest
 
-from j_faithfulness.lens import band_layers, read_at
+from j_faithfulness.lens import read_out, word_ends
 
 from .tiny import TinyDecoder
 
@@ -19,27 +19,42 @@ def tiny():
     return model, lens
 
 
-def test_band_layers():
-    assert band_layers((20, 26)) == [20, 22, 24, 26]
-    assert band_layers((20, 25)) == [20, 22, 24]
-    assert band_layers((1, 3), stride=1) == [1, 2, 3]
+def test_word_ends():
+    tokens = ["<|im_start|>", "user", "\n", "The", " guac", "amole", "?", "<|im_end|>"]
+    assert word_ends(tokens) == [0, 1, 2, 3, 5, 6, 7]
 
 
-def test_read_at(tiny):
+def test_read_out(tiny):
     model, lens = tiny
     context = "the quick brown fox"
-    r = read_at(model, lens, context, band=(0, 4), top_n=5)
-    assert r.layers == [0, 2, 4]
-    assert r.n_context_tokens == len(context) + 1  # + BOS
-    assert [len(t) for t in r.tokens] == [5, 5, 5]
-    assert r.tokens[0] == [model.tokenizer.decode([i]) for i in r.token_ids[0]]
-    # Matches the lens at the last position.
-    logits, _, _ = lens.apply(model, context, layers=[2], positions=[-1])
-    assert r.token_ids[1] == logits[2][0].topk(5).indices.tolist()
+    r = read_out(model, lens, context, band=(1, 3), positions=[-1, 4], top_n=5)
+    assert r.layers == [1, 2, 3]
+    assert r.positions == [len(context), 4]  # + BOS, so -1 is len(context)
+    assert len(r.context_tokens) == len(context) + 1
+    assert [[len(t) for t in layers] for layers in r.top] == [[5, 5, 5], [5, 5, 5]]
+    # Matches the lens at that position and layer.
+    logits, _, _ = lens.apply(model, context, layers=[2], positions=[4])
+    expected = [model.tokenizer.decode([i]) for i in logits[2][0].topk(5).indices]
+    assert r.top[1][1] == expected
 
 
-def test_read_at_long_context_is_not_truncated(tiny):
+def test_read_out_defaults_to_word_ends(tiny):
+    model, lens = tiny
+    r = read_out(model, lens, "ab cd", band=(4, 4), top_n=5)
+    assert r.positions == word_ends(r.context_tokens)
+
+
+def test_read_out_long_context_is_not_truncated(tiny):
     model, lens = tiny
     # The tiny tokenizer is byte-level: 600 chars is past jlens's default 512.
-    r = read_at(model, lens, "a" * 599 + "b", band=(4, 4), top_n=5)
-    assert r.n_context_tokens == 601
+    r = read_out(model, lens, "a" * 599 + "b", band=(4, 4), positions=[-1], top_n=5)
+    assert r.positions == [600]
+
+
+def test_in_band(tiny):
+    model, lens = tiny
+    r = read_out(model, lens, "ab cd", band=(0, 4), top_n=5)
+    b = r.in_band(1, 2)
+    assert b.layers == [1, 2]
+    assert b.top == [ranked[1:3] for ranked in r.top]
+    assert b.positions == r.positions

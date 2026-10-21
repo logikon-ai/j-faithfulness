@@ -1,5 +1,4 @@
-"""Load the model and its pre-fitted lens; read the lens out at the injection
-point."""
+"""Load the model and its pre-fitted lens; read the lens out word by word."""
 
 from __future__ import annotations
 
@@ -14,7 +13,7 @@ LENS_FILE = "qwen3.5-4b/jlens/Salesforce-wikitext/Qwen3.5-4B_jacobian_lens_n1000
 LENS_REVISION = "qwen-n1000"
 
 # lens.apply truncates from the right at max_seq_len, which would cut off the
-# injection point. Read-outs pass this and fail if the context reaches it.
+# end of the context. Read-outs pass this and fail if the context reaches it.
 MAX_SEQ_LEN = 32768
 
 
@@ -39,55 +38,83 @@ def load(model_name: str = MODEL_NAME):
 
 @dataclass
 class LatentReadout:
-    """Lens read-out at one position: the top tokens per layer, in rank order.
+    """Lens read-out over a span of positions.
 
-    ``tokens[i]`` are the decoded top ``len(tokens[i])`` tokens of
-    ``layers[i]``, unfiltered; :func:`j_faithfulness.verbalize.verbalize`
-    selects the word-like ones.
+    ``top[i][j]`` are the decoded top tokens at ``positions[i]`` and
+    ``layers[j]``, in rank order (index = rank), unfiltered;
+    :func:`j_faithfulness.verbalize.verbalize` turns them into J.
+    ``context_tokens`` is the whole context, decoded token by token.
     """
 
+    context: str
+    context_tokens: list[str]
+    positions: list[int]
     layers: list[int]
-    tokens: list[list[str]]
-    token_ids: list[list[int]]
-    n_context_tokens: int
+    top: list[list[list[str]]]
+
+    def in_band(self, lo: int, hi: int) -> LatentReadout:
+        """The same read-out restricted to layers ``lo`` to ``hi`` inclusive."""
+        keep = [j for j, layer in enumerate(self.layers) if lo <= layer <= hi]
+        return LatentReadout(
+            self.context,
+            self.context_tokens,
+            self.positions,
+            [self.layers[j] for j in keep],
+            [[ranked[j] for j in keep] for ranked in self.top],
+        )
 
 
-def band_layers(band: tuple[int, int], stride: int = 2) -> list[int]:
-    """Layers ``band[0], band[0] + stride, ...`` up to ``band[1]`` inclusive."""
-    lo, hi = band
-    return list(range(lo, hi + 1, stride))
+def word_ends(tokens: list[str]) -> list[int]:
+    """Positions that end a word: every token except a subtoken followed by
+    the rest of its word. Punctuation and special tokens are kept."""
+    ends = []
+    for i, token in enumerate(tokens):
+        nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+        continues = token[-1:].isalnum() and nxt[:1].isalnum()
+        if not continues:
+            ends.append(i)
+    return ends
 
 
 @torch.no_grad()
-def read_at(
+def read_out(
     model: jlens.LensModel,
     lens: jlens.JacobianLens,
     context: str,
     band: tuple[int, int],
-    stride: int = 2,
+    positions: list[int] | None = None,
     top_n: int = 200,
 ) -> LatentReadout:
-    """Read out the lens at the last token of ``context`` (the injection point)
-    for every ``stride``-th layer in ``band``.
+    """Read out the lens at every layer of ``band`` (inclusive) and at
+    ``positions`` (default: every word end of ``context``).
 
-    ``top_n`` raw tokens are kept per layer: enough to leave ten or so once
-    non-word tokens are filtered out.
+    ``top_n`` raw tokens are kept per position and layer: enough for word-like
+    ones to remain once the rest is filtered out.
     """
-    layers = band_layers(band, stride)
-    lens_logits, _, input_ids = lens.apply(
-        model, context, layers=layers, positions=[-1], max_seq_len=MAX_SEQ_LEN
-    )
+    layers = list(range(band[0], band[1] + 1))
+    input_ids = model.encode(context, max_length=MAX_SEQ_LEN)
     n = input_ids.shape[-1]
     if n >= MAX_SEQ_LEN:
         raise ValueError(f"context reaches MAX_SEQ_LEN={MAX_SEQ_LEN} tokens")
-    tokens, token_ids = [], []
-    for layer in layers:
-        ids = lens_logits[layer][0].topk(top_n).indices.tolist()
-        token_ids.append(ids)
-        tokens.append(
-            [
-                model.tokenizer.decode([i], clean_up_tokenization_spaces=False)
-                for i in ids
-            ]
-        )
-    return LatentReadout(layers, tokens, token_ids, n)
+
+    vocab: dict[int, str] = {}
+
+    def decode(i: int) -> str:
+        if i not in vocab:
+            vocab[i] = model.tokenizer.decode([i], clean_up_tokenization_spaces=False)
+        return vocab[i]
+
+    context_tokens = [decode(i) for i in input_ids[0].tolist()]
+    if positions is None:
+        positions = word_ends(context_tokens)
+    positions = [p % n for p in positions]
+
+    lens_logits, _, _ = lens.apply(
+        model, context, layers=layers, positions=positions, max_seq_len=MAX_SEQ_LEN
+    )
+    ids = {layer: lens_logits[layer].topk(top_n).indices.tolist() for layer in layers}
+    top = [
+        [[decode(i) for i in ids[layer][p]] for layer in layers]
+        for p in range(len(positions))
+    ]
+    return LatentReadout(context, context_tokens, positions, layers, top)
