@@ -1,7 +1,14 @@
-"""LatentReadout → J (one row of ranked words per position) → fenced text."""
+"""LatentReadout → J (one row of ranked words per position) → fenced text.
+
+Each ranked list of the read-out (one position, one layer) is a document.
+At a position, a word scores TF × IDF: TF sums its reciprocal ranks over the
+layers, and IDF counts the documents at the other positions that contain it,
+so a concept that persists through the layers doesn't raise its own count.
+"""
 
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 from collections import Counter
@@ -9,6 +16,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from j_faithfulness.lens import LatentReadout
+
+# Words sharing their first ECHO_PREFIX letters with a word of the context
+# count as echoing it (allergy, allergies ← allergic).
+ECHO_PREFIX = 5
 
 
 @dataclass
@@ -33,6 +44,11 @@ def is_word_like(token: str) -> bool:
     )
 
 
+def is_latin(word: str) -> bool:
+    """Every letter is Latin (accents allowed); digits and marks pass."""
+    return all(not ch.isalpha() or "LATIN" in unicodedata.name(ch, "") for ch in word)
+
+
 def normalize(token: str) -> str:
     """Stripped and NFKC-normalized, so ``" A"``, ``"A"`` and the fullwidth
     ``"Ａ"`` are one word."""
@@ -44,57 +60,99 @@ def words(text: str) -> set[str]:
     return {w.casefold() for w in re.findall(r"\w+(?:['’-]\w+)*", text)}
 
 
-def scores(top: list[list[str]]) -> dict[str, float]:
-    """Word-like words at one position, scored by summed reciprocal rank over
-    the layers (the best-ranked variant counts in each layer)."""
-    total: Counter[str] = Counter()
-    for ranked in top:
-        best: dict[str, int] = {}
-        for rank, token in enumerate(ranked):
-            word = normalize(token)
-            if is_word_like(word):
-                best.setdefault(word, rank)
-        for word, rank in best.items():
-            total[word] += 1 / (rank + 1)
-    return dict(total)
+def echoes(word: str, context_words: set[str]) -> bool:
+    """``word`` is a context word, or shares its first ECHO_PREFIX letters
+    with one."""
+    w = word.casefold()
+    if w in context_words:
+        return True
+    return len(w) >= ECHO_PREFIX and any(
+        c[:ECHO_PREFIX] == w[:ECHO_PREFIX]
+        for c in context_words
+        if len(c) >= ECHO_PREFIX
+    )
+
+
+def document(ranked: list[str]) -> dict[str, int]:
+    """One ranked list as a document: each word-like word at its best rank."""
+    best: dict[str, int] = {}
+    for rank, token in enumerate(ranked):
+        word = normalize(token)
+        if is_word_like(word):
+            best.setdefault(word, rank)
+    return best
+
+
+def tf_idf(readout: LatentReadout) -> list[dict[str, tuple[float, float]]]:
+    """Per position: ``{word: (tf, idf)}``.
+
+    IDF is ``log((N + 1) / (df + 1))`` over the documents at the other
+    positions; with no other positions it is 1.
+    """
+    docs = [[document(ranked) for ranked in layers] for layers in readout.top]
+    df = Counter(w for layers in docs for d in layers for w in d)
+    n = sum(len(layers) for layers in docs)
+    out = []
+    for layers in docs:
+        own = Counter(w for d in layers for w in d)
+        tf: Counter[str] = Counter()
+        for d in layers:
+            for w, rank in d.items():
+                tf[w] += 1 / (rank + 1)
+        n_rest = n - len(layers)
+        out.append(
+            {
+                w: (
+                    t,
+                    math.log((n_rest + 1) / (df[w] - own[w] + 1)) if n_rest else 1.0,
+                )
+                for w, t in tf.items()
+            }
+        )
+    return out
 
 
 def verbalize(
     readout: LatentReadout,
     k: int = 10,
-    min_score: float = 0.1,
-    max_share: float = 0.5,
+    min_tf: float = 0.5,
+    min_score: float = 1.0,
     drop: Iterable[str] = (),
     drop_context: bool = True,
+    latin_only: bool = True,
 ) -> J:
-    """J: per position, up to ``k`` words scoring at least ``min_score``, best
-    first; positions left without words are omitted.
+    """J: per position, up to ``k`` words by TF × IDF, best first; positions
+    left without words are omitted.
 
-    Left out are words of the context (``drop_context``; at a word of Q the
-    lens partly predicts Q's next word), words in ``drop`` (compared
-    casefolded), and generic words that pass ``min_score`` at more than one
-    position and more than ``max_share`` of them.
+    A word needs TF ≥ ``min_tf`` (so rare garbage isn't boosted by its IDF)
+    and TF × IDF ≥ ``min_score``. Left out are words of the context and their
+    prefix variants (``drop_context``; at a word of Q the lens partly predicts
+    Q's next word), words in ``drop`` (compared casefolded), and, with
+    ``latin_only``, words in other scripts (mostly translations of English
+    ones).
     """
     dropped = {w.casefold() for w in drop}
-    if drop_context:
-        dropped |= words(readout.context)
-    per_position = [
-        {
-            w: s
-            for w, s in scores(top).items()
-            if s >= min_score and w.casefold() not in dropped
-        }
-        for top in readout.top
-    ]
-    n_with = Counter(w for ws in per_position for w in ws)
-    generic = {
-        w for w, n in n_with.items() if n > 1 and n > max_share * len(per_position)
-    }
+    context_words = words(readout.context) if drop_context else set()
+
+    def keep(w: str) -> bool:
+        return (
+            w.casefold() not in dropped
+            and not echoes(w, context_words)
+            and (is_latin(w) or not latin_only)
+        )
+
     j = []
-    for position, ws in zip(readout.positions, per_position, strict=True):
-        ranked = sorted((w for w in ws if w not in generic), key=lambda w: -ws[w])
+    for position, scored in zip(readout.positions, tf_idf(readout), strict=True):
+        ranked = sorted(
+            (
+                (tf * idf, w)
+                for w, (tf, idf) in scored.items()
+                if tf >= min_tf and tf * idf >= min_score and keep(w)
+            ),
+            key=lambda sw: -sw[0],
+        )
         if ranked:
-            j.append(Row(position, ranked[:k]))
+            j.append(Row(position, [w for _, w in ranked[:k]]))
     return j
 
 

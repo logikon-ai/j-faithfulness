@@ -22,10 +22,20 @@ def _():
     import torch
 
     from j_faithfulness.lens import load, read_out
-    from j_faithfulness.protocols import decision_prompt
+    from j_faithfulness.protocols import USER_OPEN, decision_prompt
     from j_faithfulness.verbalize import fence, normalize, verbalize
 
-    return decision_prompt, fence, load, mo, normalize, read_out, torch, verbalize
+    return (
+        USER_OPEN,
+        decision_prompt,
+        fence,
+        load,
+        mo,
+        normalize,
+        read_out,
+        torch,
+        verbalize,
+    )
 
 
 @app.cell
@@ -35,9 +45,11 @@ def _(mo):
 
     Protocol 1, thinking off, on decisions that need one hidden step. Each
     item has a known intermediate that is not in Q (guacamole → avocado).
-    J has one row per word of the context, aggregated over the layers of the
-    band. The read-out works if J surfaces the intermediate, and the band
-    should be where it does, before the answer takes over.
+    J has one row per word of the context: its words by TF × IDF over the
+    layers of the band, where each ranked list (one position, one layer) is a
+    document and IDF counts the documents at the other positions. The
+    read-out works if J surfaces the intermediate, and the band should be
+    where it does, before the answer takes over.
     `library-bus` is a control without an intermediate.
     """)
     return
@@ -120,7 +132,7 @@ def _():
 
 
 @app.cell
-def _(ITEMS, decision_prompt, hf_model, lens, model, read_out, torch):
+def _(ITEMS, USER_OPEN, decision_prompt, hf_model, lens, model, read_out, torch):
     def answer_probs(prompt, options):
         ids = model.tokenizer(prompt, return_tensors="pt").input_ids.cuda()
         with torch.no_grad():
@@ -129,13 +141,16 @@ def _(ITEMS, decision_prompt, hf_model, lens, model, read_out, torch):
         opt_ids = model.tokenizer.convert_tokens_to_ids(options)
         return {o: round(p[i].item(), 3) for o, i in zip(options, opt_ids, strict=True)}
 
-    # Every layer the lens covers, at every word end; bands are cut from this.
+    # Every layer the lens covers, at every word end after the opening
+    # template; bands are cut from this.
     results = {}
     for _item in ITEMS:
         _prompt = decision_prompt(_item["q"])
         _probs = answer_probs(_prompt, _item["options"])
         results[_item["slug"]] = {
-            "readout": read_out(model, lens, _prompt, band=(0, lens.source_layers[-1])),
+            "readout": read_out(
+                model, lens, _prompt, band=(0, lens.source_layers[-1]), skip=USER_OPEN
+            ),
             "probs": _probs,
             "D": max(_probs, key=_probs.get),
         }
@@ -218,20 +233,21 @@ def _(answer_ranks, intermediate_ranks, mo):
 
 @app.cell
 def _(mo):
-    band = mo.ui.range_slider(start=0, stop=30, value=[12, 22], label="Band")
-    min_score = mo.ui.slider(0.0, 1.0, step=0.05, value=0.1, label="min_score")
-    max_share = mo.ui.slider(0.1, 1.0, step=0.05, value=0.5, label="max_share")
-    mo.hstack([band, min_score, max_share], justify="start")
-    return band, max_share, min_score
+    band = mo.ui.range_slider(start=0, stop=30, value=[8, 21], label="Band")
+    k = mo.ui.slider(1, 10, value=10, label="k")
+    min_tf = mo.ui.slider(0.0, 3.0, step=0.1, value=0.5, label="min_tf")
+    min_score = mo.ui.slider(0.0, 5.0, step=0.1, value=1.0, label="min_score")
+    mo.hstack([band, k, min_tf, min_score], justify="start")
+    return band, k, min_score, min_tf
 
 
 @app.cell
-def _(ITEMS, band, max_share, min_score, results, verbalize):
+def _(ITEMS, band, k, min_score, min_tf, results, verbalize):
     def j_of(slug, last_only=False):
         r = results[slug]["readout"].in_band(*band.value)
         if last_only:
             r.positions, r.top = r.positions[-1:], r.top[-1:]
-        return verbalize(r, min_score=min_score.value, max_share=max_share.value)
+        return verbalize(r, k=k.value, min_tf=min_tf.value, min_score=min_score.value)
 
     def hit(j, item):
         found = {w.casefold() for row in j for w in row.words}
@@ -244,6 +260,7 @@ def _(ITEMS, band, max_share, min_score, results, verbalize):
             "item": i["slug"],
             "P(options)": str(results[i["slug"]]["probs"]),
             "rows": len(js[i["slug"]]),
+            "words": sum(len(row.words) for row in js[i["slug"]]),
             "intermediate in J": hit(js[i["slug"]], i) if i["intermediate"] else "",
             "… in last-position J": hit(js_last[i["slug"]], i)
             if i["intermediate"]
@@ -307,8 +324,9 @@ def _(
     intermediate_ranks,
     js,
     js_last,
-    max_share,
+    k,
     min_score,
+    min_tf,
     results,
     summary,
 ):
@@ -321,8 +339,8 @@ def _(
     for _row in answer_ranks:
         print(_row)
     print(
-        f"\n== J: band={band.value} min_score={min_score.value} "
-        f"max_share={max_share.value}"
+        f"\n== J: band={band.value} k={k.value} min_tf={min_tf.value} "
+        f"min_score={min_score.value}"
     )
     for _row in summary:
         print(_row)

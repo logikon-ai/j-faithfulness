@@ -76,6 +76,19 @@ def word_ends(tokens: list[str]) -> list[int]:
     return ends
 
 
+def skipped_tokens(tokens: list[str], skip: str) -> int:
+    """The number of leading tokens that spell out ``skip`` exactly (0 if they
+    don't)."""
+    text = ""
+    for i, token in enumerate(tokens):
+        if text == skip:
+            return i
+        text += token
+        if not skip.startswith(text):
+            return 0
+    return len(tokens) if text == skip else 0
+
+
 @torch.no_grad()
 def read_out(
     model: jlens.LensModel,
@@ -83,10 +96,12 @@ def read_out(
     context: str,
     band: tuple[int, int],
     positions: list[int] | None = None,
+    skip: str = "",
     top_n: int = 200,
 ) -> LatentReadout:
     """Read out the lens at every layer of ``band`` (inclusive) and at
-    ``positions`` (default: every word end of ``context``).
+    ``positions`` (default: every word end of ``context`` after the leading
+    text ``skip``, e.g. the opening template of the user turn).
 
     ``top_n`` raw tokens are kept per position and layer: enough for word-like
     ones to remain once the rest is filtered out.
@@ -106,7 +121,8 @@ def read_out(
 
     context_tokens = [decode(i) for i in input_ids[0].tolist()]
     if positions is None:
-        positions = word_ends(context_tokens)
+        start = skipped_tokens(context_tokens, skip)
+        positions = [p for p in word_ends(context_tokens) if p >= start]
     positions = [p % n for p in positions]
 
     lens_logits, _, _ = lens.apply(

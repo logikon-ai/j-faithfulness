@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 EMPTY_THINK = "<think>\n\n</think>\n\n"
+# Opens every transcript. Its read-out is the same template junk on every
+# prompt, so read-outs skip it.
+USER_OPEN = "<|im_start|>user\n"
 
 
 def user_turn(text: str) -> str:
-    return f"<|im_start|>user\n{text}<|im_end|>\n"
+    return f"{USER_OPEN}{text}<|im_end|>\n"
 
 
 def decision_prompt(q: str) -> str:

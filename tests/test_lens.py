@@ -1,7 +1,7 @@
 import jlens
 import pytest
 
-from j_faithfulness.lens import read_out, word_ends
+from j_faithfulness.lens import read_out, skipped_tokens, word_ends
 
 from .tiny import TinyDecoder
 
@@ -22,6 +22,15 @@ def tiny():
 def test_word_ends():
     tokens = ["<|im_start|>", "user", "\n", "The", " guac", "amole", "?", "<|im_end|>"]
     assert word_ends(tokens) == [0, 1, 2, 3, 5, 6, 7]
+
+
+def test_skipped_tokens():
+    tokens = ["<|im_start|>", "user", "\n", "Q", "?"]
+    assert skipped_tokens(tokens, "<|im_start|>user\n") == 3
+    assert skipped_tokens(tokens, "") == 0
+    assert skipped_tokens(tokens, "<|im_start|>us") == 0  # not a token boundary
+    assert skipped_tokens(tokens, "<|im_start|>system\n") == 0
+    assert skipped_tokens(tokens, "<|im_start|>user\nQ?") == 5
 
 
 def test_read_out(tiny):

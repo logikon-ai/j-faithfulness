@@ -104,27 +104,43 @@ token. Intermediates surface where they are computed ("Italy" at "boot" in
 "the currency of the country shaped like a boot is"), and at the token right
 before X the final layers predict X itself while the middle layers hold
 response format. The span for D in protocol 1 is the whole context: Q and the
-generation prompt.
+generation prompt, minus the opening `<|im_start|>user\n`, whose read-out is
+the same junk on every prompt. On eight one-hop items, J over the span
+surfaced the known intermediate on seven; J at the last token alone, on none.
+The intermediates surface at the word that cues them (Italy at "boot", Paris
+at "Eiff**el**") and at the line break after the user turn, where the model
+seems to pull the question together (Pacific, for "the largest ocean", only
+there).
 
 J(X) is built in four steps:
 1. **Read out** the lens at every word of the span and every layer of the
    band. A word's position is its last subtoken; punctuation and special
    tokens count as words. The band is the mid-network layers: early layers
    are noise and word fragments, and late layers already contain the next
-   output. Provisionally layers 12–22: at the token before D, the answer
-   letter enters the top 10 by layer 22–23.
-2. **Aggregate over the band.** At each position, a word scores the sum of
-   1/(rank + 1) over the band's layers. Token variants count as one word
-   (stripped and NFKC-normalized, so ` A`, `A` and the fullwidth `Ａ` merge).
-3. **Filter.** Keep word-like tokens (jlens's `mask_display` rule) scoring at
-   least `min_score`. Drop words of the context: at a word of Q the lens
-   partly predicts Q's next word, and in protocol 4 this also keeps R's own
-   words out of J. Drop generic words, which pass at more than one position
-   and more than `max_share` of them. Positions left without words are
-   omitted.
+   output. Provisionally layers 8–21: the intermediates rank near the top
+   from layers 6–9, and at the token before D the answer letter enters the
+   top 10 at layer 22.
+2. **Score by TF × IDF.** Each ranked list (one position, one layer) is a
+   document. At a position, a word's TF is the sum of 1/(rank + 1) over the
+   band's layers. Its IDF is log((N + 1) / (df + 1)), counting only the
+   documents at the *other* positions, so a concept that persists through
+   the layers at its position doesn't raise its own count. Words spread over
+   the prompt get a low IDF: format words (Answer, Option, 回答) and the
+   multilingual "or" at "A or B". Token variants count as one word (stripped
+   and NFKC-normalized, so ` A`, `A` and the fullwidth `Ａ` merge). The IDF
+   comes from the read-out itself, with no reference corpus.
+3. **Filter.** Keep word-like tokens (jlens's `mask_display` rule) in Latin
+   script: Q and J are in English, and the other scripts mostly repeat
+   English words (意大利 = Italy) or are format words. Keep words with TF ≥
+   `min_tf`, since a word found at only one position gets the highest IDF
+   and rare garbage would otherwise be boosted, and with TF × IDF ≥
+   `min_score`. Drop words of the context and words sharing their first
+   five letters with one (allergy, allergies ← allergic): at a word of Q the
+   lens partly predicts Q's next word, and in protocol 4 this also keeps R's
+   own words out of J. Positions left without words are omitted.
 4. **Verbalize** each remaining position as one row: its top-k words (k = 10)
-   by score. Rows appear in context order and carry no reference to the word
-   they come from.
+   by TF × IDF. Rows appear in context order and carry no reference to the
+   word they come from.
 
 J(X) is a sequence of keyword rows, not prose. It preserves the flow through
 the context, which makes position-based edits possible (see conditions
@@ -289,16 +305,21 @@ small set of forced-choice questions, as scoped above.
 
 ## Open questions
 
-- **Band.** 12–22 is provisional; `notebooks/readout.py` checks where the
-  known intermediates rank best and where the answer takes over.
-- **Thresholds.** `min_score` (0.1) and `max_share` (0.5) set how sparse J
-  is; they are tuned on the same items.
-- **Aggregation.** Summed reciprocal rank rewards words that persist across
-  layers; the best rank in any layer would reward peaks.
+- **Band.** 8–21 is provisional; the lower end depends on whether early
+  layers add word fragments once filtered.
+- **Thresholds.** `min_tf` (0.5), `min_score` (1.0) and k set how long J
+  is; they are tuned on the validation items.
+- **TF.** Summed reciprocal rank rewards words that persist across layers;
+  the best rank in any layer would reward peaks.
+- **Echo beyond prefixes.** Synonyms of context words (author → writer) pass
+  the prefix rule.
+- **IDF over several read-outs.** Document counts from several read-outs
+  add up, so IDF could also be taken over a batch of prompts.
 - **Long spans.** A read-out holds `[positions, vocab]` logits per layer, so a
   long R needs chunking.
-- **Salience.** Beyond the known intermediate, which words count as "the n
-  most salient": highest score, persistence across rows, or both?
+- **Salience.** Beyond the known intermediate, are "the n most salient"
+  words simply the highest TF × IDF in J, or should persistence across rows
+  count too?
 - **Remove vs replace.** The model still computes the removed items
   internally, so removing them from J may do little. Replacing them with foils
   may be the stronger edit.

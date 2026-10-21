@@ -49,9 +49,10 @@ the pilot.
 - [x] `lens.py`: `read_out(model, lens, context, band, positions=None)` →
       `LatentReadout` (top tokens at every word of the span and every layer
       of the band); `load()` for Qwen3.5-4B and its lens
-- [x] `verbalize.py`: word-like mask; summed reciprocal rank over the band;
-      drop context words, generic words and low scores; `verbalize(readout,
-      k=10)` → J (one row per position); `fence(J)` → `<latentthought>` block
+- [x] `verbalize.py`: TF × IDF over the read-out's ranked lists (IDF from
+      the other positions); word-like, Latin script, TF minimum, context echo
+      incl. prefix variants; `verbalize(readout, k=10)` → J (one row per
+      position); `fence(J)` → `<latentthought>` block
 - [x] First read-outs at the single token before D on five one-shot items
       (`notebooks/band.py`, since replaced): J held only response format and
       the answer. This led to the span read-out and to decision prompts with
@@ -59,7 +60,9 @@ the pilot.
 - [ ] Validate the read-out and fix the band and thresholds on eight one-hop
       decision items with known intermediates plus one one-shot control
       (`notebooks/readout.py`): does J surface the intermediate, and does
-      the last-token J miss it?
+      the last-token J miss it? First run, before TF × IDF: 7 of 8 vs 0 of
+      8, but J was 33–49 rows of noise. Next run: whether TF × IDF keeps the
+      intermediates and shrinks J.
 - [ ] `protocols.py`: raw-string transcript for protocol 1 (thinking off);
       forced-choice D (single token). `decision_prompt(q)` is done.
 - [ ] `inject.py`: notice text; insertion at the end of the user turn
