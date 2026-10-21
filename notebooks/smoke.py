@@ -3,11 +3,14 @@
 # dependencies = [
 #     "marimo",
 #     "transformers>=5.5",
+#     "flash-linear-attention",
 #     "jlens @ git+https://github.com/anthropics/jacobian-lens.git@581d398613e5602a5af361e1c34d3a92ea82ba8e",
 # ]
 # ///
 # torch is left out on purpose: molab preinstalls a CUDA build, and resolving
 # torch from PyPI could replace it with one that doesn't support the GPU.
+# flash-linear-attention gives Qwen3.5's linear-attention layers fast kernels;
+# without it transformers falls back to a slow (but correct) reference version.
 
 import marimo
 
@@ -88,8 +91,8 @@ def _(mo):
     ## Walkthrough readout
 
     Two-hop question read out at the "boot" token. Expect the J-lens to
-    surface Italy/euro-like tokens at middle layers where the logit lens is
-    still noise.
+    surface boot- and Italy-like tokens at middle layers where the logit
+    lens is still noise.
     """)
     return
 

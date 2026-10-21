@@ -28,14 +28,18 @@ the pilot.
       script metadata); install `jlens` and this repo from git (needs the repo
       public, or auth); check that torch supports the Blackwell GPU.
       `notebooks/smoke.py` declares its dependencies as inline script metadata
-      and leaves torch to molab's preinstalled CUDA build. Still to confirm on
-      molab: that the metadata, including the git URL, is honoured. The repo
-      goes public with the work on `dev`; molab installs this package from
+      and leaves torch to molab's preinstalled CUDA build (torch 2.11, CUDA
+      13.0, with `sm_120` kernels: the Blackwell GPU works). molab installs
+      the metadata's dependencies itself, including `jlens` from its git URL.
+      Left: installing this repo there, once it's public. The repo goes
+      public with the work on `dev`; molab installs this package from
       `git+https://github.com/logikon-ai/j-faithfulness.git@dev`, with a forced
       reinstall after each push.
-- [ ] Smoke test on molab: load Qwen3.5-4B and its lens and reproduce the
-      jlens walkthrough readout. `notebooks/smoke.py` is ready to run; it
-      also checks the GPU arch and shows a first protocol-1 readout.
+- [x] Smoke test on molab: load Qwen3.5-4B and its lens and reproduce the
+      jlens walkthrough readout. `notebooks/smoke.py`: at the "boot" token the
+      J-lens shows boots/heel at layer 8 and Italy at layer 16, where the
+      logit lens is still noise. First protocol-1 readout is under Band in
+      DESIGN.md.
 - [x] Check whether the Qwen3.5 chat template strips `<think>` content from
       earlier turns; work out the raw-string format. It does; the format is
       in DESIGN.md (Conversation protocols).

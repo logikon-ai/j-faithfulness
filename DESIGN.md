@@ -240,7 +240,16 @@ small set of forced-choice questions, as scoped above.
 
 ## Open questions
 
-- **Band.** Which layers make up the band for Qwen3.5-4B?
+- **Band.** Which layers make up the band for Qwen3.5-4B (32 layers; the lens
+  covers 0–30)? First look, one A/B question with thinking off: up to layer
+  18 the raw top 10 at the injection point is formatting and punctuation
+  (the position is the `\n\n` after `</think>`); layers 20–26 show
+  answer-level words (Neither, Both, Depends, Cannot, Choice); from layer 28
+  the answer tokens A and B lead. That suggests a band around 20–26, but
+  none of it is about the reasons (library, bus): it isn't yet clear that J
+  at this point carries reason content. Raw top-10 lists also repeat words
+  that differ only in a leading space (` A` / `A`), so verbalization should
+  merge them.
 - **Smarter layer selection.** Choose the stride dynamically from the overlap
   between adjacent rows (merge near-identical rows, keep the shifts) instead of
   a fixed stride of 2.
