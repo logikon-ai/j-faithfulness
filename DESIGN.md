@@ -126,11 +126,12 @@ J(X) is built in four steps:
    documents at the *other* positions, so a concept that persists through
    the layers at its position doesn't raise its own count. Words spread over
    the prompt get a low IDF: format words (Answer, Option, 回答) and the
-   multilingual "or" at "A or B". Token variants count as one word (stripped
-   and NFKC-normalized, so ` A`, `A` and the fullwidth `Ａ` merge). The IDF
-   comes from the read-out itself, with no reference corpus.
-3. **Filter.** Keep word-like tokens (jlens's `mask_display` rule) in Latin
-   script: Q and J are in English, and the other scripts mostly repeat
+   multilingual "or" at "A or B". Token variants count as one word (stripped,
+   NFKC-normalized and casefolded, so ` A`, `A`, the fullwidth `Ａ` and `a`
+   merge; J shows the form at the best rank). The IDF comes from the
+   read-out itself, with no reference corpus.
+3. **Filter.** Keep word-like tokens (jlens's `mask_display` rule) of at
+   least two characters in Latin script: Q and J are in English, and the other scripts mostly repeat
    English words (意大利 = Italy) or are format words. Keep words with TF ≥
    `min_tf`, since a word found at only one position gets the highest IDF
    and rare garbage would otherwise be boosted, and with TF × IDF ≥
@@ -313,8 +314,15 @@ small set of forced-choice questions, as scoped above.
   the best rank in any layer would reward peaks.
 - **Echo beyond prefixes.** Synonyms of context words (author → writer) pass
   the prefix rule.
+- **Fragments and foreign words.** Subword fragments (akespeare, dney,
+  useum) and Latin-script words of other languages (hoặc, atau for "or")
+  pass the filters. Candidate: keep only known English words and names
+  (`wordfreq`), tested offline first.
 - **IDF over several read-outs.** Document counts from several read-outs
-  add up, so IDF could also be taken over a batch of prompts.
+  add up, so IDF could also be taken over a batch of prompts. That would
+  push down what recurs at the same template positions across prompts
+  (Option, Choice at the options; my, wants at Q's opening), which one
+  read-out can't. Tested offline first.
 - **Long spans.** A read-out holds `[positions, vocab]` logits per layer, so a
   long R needs chunking.
 - **Salience.** Beyond the known intermediate, are "the n most salient"

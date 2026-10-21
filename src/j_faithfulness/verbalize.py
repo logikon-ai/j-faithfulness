@@ -73,40 +73,48 @@ def echoes(word: str, context_words: set[str]) -> bool:
     )
 
 
-def document(ranked: list[str]) -> dict[str, int]:
-    """One ranked list as a document: each word-like word at its best rank."""
-    best: dict[str, int] = {}
+def document(ranked: list[str]) -> dict[str, tuple[int, str]]:
+    """One ranked list as a document: each word-like word of two or more
+    characters at its best rank, keyed casefolded (Wildlife, wildlife), with
+    the form found there."""
+    best: dict[str, tuple[int, str]] = {}
     for rank, token in enumerate(ranked):
         word = normalize(token)
-        if is_word_like(word):
-            best.setdefault(word, rank)
+        if len(word) >= 2 and is_word_like(word):
+            best.setdefault(word.casefold(), (rank, word))
     return best
 
 
 def tf_idf(readout: LatentReadout) -> list[dict[str, tuple[float, float]]]:
-    """Per position: ``{word: (tf, idf)}``.
+    """Per position: ``{word: (tf, idf)}``, each word in the form it has at
+    its best rank there.
 
     IDF is ``log((N + 1) / (df + 1))`` over the documents at the other
     positions; with no other positions it is 1.
     """
     docs = [[document(ranked) for ranked in layers] for layers in readout.top]
-    df = Counter(w for layers in docs for d in layers for w in d)
+    df = Counter(key for layers in docs for d in layers for key in d)
     n = sum(len(layers) for layers in docs)
     out = []
     for layers in docs:
-        own = Counter(w for d in layers for w in d)
+        own = Counter(key for d in layers for key in d)
         tf: Counter[str] = Counter()
+        form: dict[str, tuple[int, str]] = {}
         for d in layers:
-            for w, rank in d.items():
-                tf[w] += 1 / (rank + 1)
+            for key, (rank, word) in d.items():
+                tf[key] += 1 / (rank + 1)
+                if key not in form or rank < form[key][0]:
+                    form[key] = (rank, word)
         n_rest = n - len(layers)
         out.append(
             {
-                w: (
+                form[key][1]: (
                     t,
-                    math.log((n_rest + 1) / (df[w] - own[w] + 1)) if n_rest else 1.0,
+                    math.log((n_rest + 1) / (df[key] - own[key] + 1))
+                    if n_rest
+                    else 1.0,
                 )
-                for w, t in tf.items()
+                for key, t in tf.items()
             }
         )
     return out

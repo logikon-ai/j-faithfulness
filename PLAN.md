@@ -61,8 +61,10 @@ the pilot.
       decision items with known intermediates plus one one-shot control
       (`notebooks/readout.py`): does J surface the intermediate, and does
       the last-token J miss it? First run, before TF × IDF: 7 of 8 vs 0 of
-      8, but J was 33–49 rows of noise. Next run: whether TF × IDF keeps the
-      intermediates and shrinks J.
+      8, but J was 33–49 rows of noise. With TF × IDF: still 7 of 8, J down
+      to 11–25 rows and 47–135 words. The notebook now downloads the raw
+      read-outs, so band, thresholds and further filters (English words,
+      IDF over a batch) are tuned offline.
 - [ ] `protocols.py`: raw-string transcript for protocol 1 (thinking off);
       forced-choice D (single token). `decision_prompt(q)` is done.
 - [ ] `inject.py`: notice text; insertion at the end of the user turn

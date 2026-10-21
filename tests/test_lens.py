@@ -1,7 +1,14 @@
 import jlens
 import pytest
 
-from j_faithfulness.lens import read_out, skipped_tokens, word_ends
+from j_faithfulness.lens import (
+    LatentReadout,
+    read_out,
+    readouts_from_json,
+    readouts_to_json,
+    skipped_tokens,
+    word_ends,
+)
 
 from .tiny import TinyDecoder
 
@@ -67,3 +74,15 @@ def test_in_band(tiny):
     assert b.layers == [1, 2]
     assert b.top == [ranked[1:3] for ranked in r.top]
     assert b.positions == r.positions
+
+
+def test_readouts_json_round_trip():
+    import json
+
+    r = LatentReadout(
+        "ctx", ["c", "tx"], [0, 1], [8, 9], [[["a", "b", "c"], ["b"]], [["c"], ["a"]]]
+    )
+    data = json.loads(json.dumps(readouts_to_json({"x": r})))
+    assert readouts_from_json(data) == {"x": r}
+    short = readouts_from_json(readouts_to_json({"x": r}, top_n=1))["x"]
+    assert short.top == [[["a"], ["b"]], [["c"], ["a"]]]

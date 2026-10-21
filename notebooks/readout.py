@@ -21,7 +21,7 @@ def _():
     import marimo as mo
     import torch
 
-    from j_faithfulness.lens import load, read_out
+    from j_faithfulness.lens import load, read_out, readouts_to_json
     from j_faithfulness.protocols import USER_OPEN, decision_prompt
     from j_faithfulness.verbalize import fence, normalize, verbalize
 
@@ -33,6 +33,7 @@ def _():
         mo,
         normalize,
         read_out,
+        readouts_to_json,
         torch,
         verbalize,
     )
@@ -155,6 +156,26 @@ def _(ITEMS, USER_OPEN, decision_prompt, hf_model, lens, model, read_out, torch)
             "D": max(_probs, key=_probs.get),
         }
     return (results,)
+
+
+@app.cell
+def _(ITEMS, mo, readouts_to_json, results):
+    import gzip as _gzip
+    import json as _json
+
+    # All layers, top 100 per ranked list: enough to tune band, thresholds
+    # and filters offline (j_faithfulness.lens.readouts_from_json).
+    _data = {
+        "items": ITEMS,
+        "probs": {s: r["probs"] for s, r in results.items()},
+        **readouts_to_json({s: r["readout"] for s, r in results.items()}, top_n=100),
+    }
+    mo.download(
+        data=_gzip.compress(_json.dumps(_data).encode()),
+        filename="readouts.json.gz",
+        mimetype="application/gzip",
+        label="Download read-outs",
+    )
 
 
 @app.cell

@@ -42,7 +42,20 @@ def test_is_latin():
 
 
 def test_document_keeps_best_rank_of_normalized_word_like_words():
-    assert document(["?", "Italy", " Italy", "Ａ", "¾"]) == {"Italy": 1, "A": 3}
+    # Ａ → "A" is one character, ¾ → "3⁄4" isn't word-like.
+    assert document(["?", "Italy", " Italy", "Ａ", "¾", "ab"]) == {
+        "italy": (1, "Italy"),
+        "ab": (5, "ab"),
+    }
+
+
+def test_document_merges_case():
+    assert document(["wildlife", " Wildlife", "s"]) == {"wildlife": (0, "wildlife")}
+
+
+def test_tf_idf_merges_case_across_layers_and_shows_the_best_form():
+    (pos,) = tf_idf(readout([["x", "wildlife"], [" Wildlife"]]))
+    assert pos == {"Wildlife": (1 / 2 + 1, 1.0)}
 
 
 def test_echoes():
