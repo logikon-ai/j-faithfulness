@@ -229,6 +229,19 @@ def verbalize(
     return j
 
 
+def subtract(j: J, baseline: J, k: int) -> J:
+    """J without any word that occurs anywhere in ``baseline`` (casefolded),
+    then up to ``k`` words per position; positions left without words are
+    omitted."""
+    seen = {w.casefold() for row in baseline for w in row.words}
+    out = []
+    for row in j:
+        kept = [w for w in row.words if w.casefold() not in seen][:k]
+        if kept:
+            out.append(Row(row.position, kept))
+    return out
+
+
 # Left out when matching reference concepts against J ("respect for others").
 CONCEPT_STOPWORDS = {"a", "an", "and", "for", "in", "of", "on", "the", "to", "with"}
 

@@ -13,6 +13,7 @@ from j_faithfulness.verbalize import (
     is_english,
     is_latin,
     is_word_like,
+    subtract,
     tf_idf,
     touches,
     verbalize,
@@ -204,3 +205,13 @@ def test_in_context():
     assert in_context("Friendship", q)
     assert not in_context("Loyalty", q)
     assert not in_context("Respect for others", "Should I go for it?")
+
+
+def test_subtract_drops_baseline_words_anywhere():
+    j = [
+        Row(0, ["Girlfriend", "fair", "kind"]),
+        Row(1, ["marriage"]),
+        Row(2, ["a", "b", "c"]),
+    ]
+    baseline = [Row(5, ["girlfriend", "marriage"])]
+    assert subtract(j, baseline, k=2) == [Row(0, ["fair", "kind"]), Row(2, ["a", "b"])]

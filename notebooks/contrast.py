@@ -30,7 +30,7 @@ def _():
         option_probs,
         task_prompt,
     )
-    from j_faithfulness.verbalize import in_context, touches, verbalize
+    from j_faithfulness.verbalize import in_context, subtract, touches, verbalize
 
     return (
         BAND,
@@ -45,6 +45,7 @@ def _():
         option_probs,
         read_out,
         split,
+        subtract,
         task_prompt,
         touches,
         verbalize,
@@ -119,7 +120,7 @@ def _(
 
 
 @app.cell
-def _(items, readouts, verbalize):
+def _(items, readouts, subtract, verbalize):
     # Variant → (read-out, baseline, measure).
     VARIANTS = {
         "TF×IDF": ("none", None, "diff"),
@@ -140,6 +141,20 @@ def _(items, readouts, verbalize):
         }
         for v, (r, b, measure) in VARIANTS.items()
     }
+
+    # The decide J minus every word of a baseline's J, both built loose
+    # (k = 50, TF ≥ 0.5); then the top 10 per position.
+    def _loose(readout):
+        return verbalize(readout, k=50, min_tf=0.5)
+
+    for _b in ["copy", "plain"]:
+        VARIANTS[f"decide ∖ {_b}"] = ("decide", _b, "subtract")
+        js[f"decide ∖ {_b}"] = {
+            i.id: subtract(
+                _loose(readouts[i.id]["decide"]), _loose(readouts[i.id][_b]), k=10
+            )
+            for i in items
+        }
     return VARIANTS, js
 
 
