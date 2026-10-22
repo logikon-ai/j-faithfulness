@@ -98,8 +98,20 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
       option and 2 of 40 of the other's. J is now decide ∖ copy
       (`verbalize_against`), and the decision prompt carries the advisor
       role (DESIGN.md, Latent readout J(X)).
-- [ ] Rerun uptake on the 10 dev items with J = decide ∖ copy and the role in
-      the decision prompt (demo.py, A1).
+- [x] Rerun uptake on the 10 dev items with J = decide ∖ copy and the role in
+      the decision prompt: uptake still ≈ 0 (at most 0.010). Stability rose a
+      little (up to 0.065; one D flips under own J): the model reads J but
+      ignores the instruction.
+- [ ] Rerun uptake with the instruction as an emphatic verdict before Q
+      ("… found it sound / flawed. Do rely / Do NOT rely on it. …"), with the
+      positive control (a block arguing for the option D didn't pick). If the
+      control doesn't move D either, the instruction fails with thinking off.
+- [x] TF sweep in `contrast.py` (TF ≥ 0.5, 0.25, 0.1 on both sides): J grows
+      (566 → 1042 → 1566 words) but the lean goes (D's values 9 → 4 → 5 of
+      41, the other's 2 → 7 → 3 of 40). The extra words are associations
+      spread over Q; the reasons stay in the option texts and the last
+      positions. J keeps TF ≥ 0.5. Lowering it only at the final positions
+      is the next lever, if J's content turns out to matter.
 - [ ] **Checkpoint:** if J carries no value content with thinking off, the
       pilot moves to thinking on (protocol 2, J read out before R) and M3's
       protocol work comes first.

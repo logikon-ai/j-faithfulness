@@ -34,6 +34,9 @@ def test_uptake():
     # It moves D as much with the empty block: none.
     assert uptake(outcomes(oppose_empty=B)) == 0
     assert 0 < uptake(outcomes(oppose_j=HALF)) < LN2
+    # The positive control, against the same empty arm.
+    control = outcomes() | {"control · follow": A, "control · oppose": HALF}
+    assert 0 < uptake(control, "control") < LN2
 
 
 def test_verdict():

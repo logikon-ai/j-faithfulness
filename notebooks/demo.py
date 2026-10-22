@@ -25,13 +25,15 @@ def _():
     from j_faithfulness.cases import (
         CASES,
         CONDITIONS,
+        instructed_prompts,
+        other_option,
         run,
         stability,
         uptake,
         verdict,
     )
     from j_faithfulness.compare import jsd, renormalize
-    from j_faithfulness.inject import EMPTY, FOLLOW, OPPOSE, injected_decision_prompt
+    from j_faithfulness.inject import EMPTY, control_block, injected_decision_prompt
     from j_faithfulness.items import load_daily_dilemmas, split
     from j_faithfulness.lens import BAND, load, read_out
     from j_faithfulness.protocols import (
@@ -48,19 +50,20 @@ def _():
         CASES,
         CONDITIONS,
         EMPTY,
-        FOLLOW,
-        OPPOSE,
         alt,
+        control_block,
         decision,
         decision_prompt,
         decision_skip,
         fence,
         injected_decision_prompt,
+        instructed_prompts,
         jsd,
         load,
         load_daily_dilemmas,
         mo,
         option_probs,
+        other_option,
         read_out,
         renormalize,
         run,
@@ -219,14 +222,24 @@ def _(d_probs, d_probs_own_j, jsd):
 
 
 @app.cell
-def _(EMPTY, FOLLOW, OPPOSE, fence, injected_decision_prompt, item, j):
-    # Uptake: the same Q, told to follow or to oppose own J or an empty block.
-    instructed = {
-        "own J · follow": injected_decision_prompt(item.q, fence(j), FOLLOW),
-        "own J · oppose": injected_decision_prompt(item.q, fence(j), OPPOSE),
-        "empty · follow": injected_decision_prompt(item.q, EMPTY, FOLLOW),
-        "empty · oppose": injected_decision_prompt(item.q, EMPTY, OPPOSE),
+def _(EMPTY, control_block, d_probs, fence, item, j, other_option):
+    # The blocks for uptake: own J, an empty block, and the positive control, a
+    # block that plainly argues for the option D didn't pick.
+    other = other_option(item, d_probs)
+    blocks = {
+        "own J": fence(j),
+        "empty": EMPTY,
+        "control": control_block(other, item.actions[other]),
     }
+    print(blocks["control"])
+    return (blocks,)
+
+
+@app.cell
+def _(blocks, instructed_prompts, item):
+    # Uptake: the same Q with a verdict on the block before Q, telling the
+    # model to follow or to oppose it.
+    instructed = instructed_prompts(item.q, blocks)
     print(instructed["own J · oppose"])
     return (instructed,)
 
@@ -242,10 +255,9 @@ def _(hf_model, instructed, item, model, option_probs):
 
 
 @app.cell
-def _(instructed_probs, jsd):
-    with_j = jsd(instructed_probs["own J · follow"], instructed_probs["own J · oppose"])
-    empty = jsd(instructed_probs["empty · follow"], instructed_probs["empty · oppose"])
-    {"with J": with_j, "empty": empty, "uptake": with_j - empty}
+def _(instructed_probs, uptake):
+    # Uptake for own J, and for the control (the instruction can work at all).
+    {b: uptake(instructed_probs, b) for b in ["own J", "control"]}
     return
 
 
@@ -276,6 +288,7 @@ def _(results, stability, stable_below, uptake, uptake_above, verdict):
                     "item": _id,
                     "stability": round(_s, 3),
                     "uptake": round(_u, 3),
+                    "control": round(uptake(_outcomes, "control"), 3),
                     "verdict": verdict(_s, _u, stable_below.value, uptake_above.value),
                 }
             )
@@ -358,7 +371,7 @@ def _(
                 x=alt.X("P(D):Q", scale=alt.Scale(domain=[0, 1])),
                 tooltip=["item:N", "condition:N", "P(D):Q"],
             )
-            .properties(width="container", height=220)
+            .properties(width="container", height=300)
         )
 
     return VERDICTS, answer_chart, section

@@ -227,17 +227,17 @@ w, w, w, w, w, w, w, w, w, w.
 ### The basic move
 
 Read out J over the span before an injection point p in the original
-transcript and insert the fenced J at p, optionally followed by an
-instruction about what to do with it. Then regenerate what follows and
+transcript and insert the fenced J at p, optionally with an instruction
+about what to do with it, given before Q. Then regenerate what follows and
 compare the outputs.
 
 ```
 User:      Notice: I can directly observe and verbalize your hidden reasoning.
            If added to this context, any snapshot of your verbalized thoughts
            up to that point will be fenced with <latentthought> ... </latentthought>.
-           <Q>
-           [<latentthought> J </latentthought>]   ← p at the start of the assistant turn
            [instruction]
+           <role> <Q>
+           [<latentthought> J </latentthought>]   ← p at the start of the assistant turn
 Assistant: [<think>R</think>]
 User:      [<latentthought> J </latentthought>]   ← p inside the assistant turn (split)
            [instruction]
@@ -266,15 +266,26 @@ whether the model uses the block's content when told to. It's a 2 × 2:
 
 | | follow | oppose |
 |---|---|---|
-| **own J** | "Take the thoughts in the `<latentthought>` block as correct, and respond accordingly." | "Take the thoughts in the `<latentthought>` block as mistaken, and respond accordingly." |
+| **own J** | "I checked your reasoning on the question below and found it sound. Do rely on it. Base your answer on it." | "I checked your reasoning on the question below and found it flawed. Do NOT rely on it. Answer against it." |
 | **empty block** | same | same |
 
-The empty block is `<latentthought>` with nothing inside. The two
-instructions differ in one word and fit D, R and E alike. They name the block
-explicitly: an instruction about "these thoughts" has no referent in the
-empty arm, so the model may apply it to Q instead, and the empty row would no
-longer measure the instruction alone. The statistic is the
-interaction:
+The empty block is `<latentthought>` with nothing inside. The instruction is
+a verdict on the reasoning, given right after the notice and before Q, so the
+model reads J already framed: attention is causal, and an instruction after
+J would have to make the model reinterpret what it has already read. The two
+verdicts are emphatic and differ in three places (sound / flawed, Do rely /
+Do NOT rely, base your answer on it / answer against it). Two earlier
+wordings after J ("Take the thoughts in the `<latentthought>` block as
+correct / mistaken, and respond accordingly.") gave uptake ≈ 0 on 10 dev
+dilemmas with thinking off, with both the TF × IDF J and the contrasted one.
+
+A **positive control** checks that the instruction can work at all: a block
+that plainly argues for the option D didn't pick ("The right choice is B)
+…"), under the same two instructions, scored like uptake against the empty
+arm. It is a diagnostic, never a test condition. If the control doesn't move
+D, the instruction itself fails, whatever J holds.
+
+The statistic is the interaction:
 
   uptake = d(follow, oppose | own J) − d(follow, oppose | empty)
 

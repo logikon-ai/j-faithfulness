@@ -6,9 +6,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from j_faithfulness.compare import jsd
-from j_faithfulness.inject import EMPTY, FOLLOW, OPPOSE, injected_decision_prompt
+from j_faithfulness.inject import (
+    EMPTY,
+    FOLLOW,
+    OPPOSE,
+    control_block,
+    injected_decision_prompt,
+)
 from j_faithfulness.lens import BAND, read_out
 from j_faithfulness.protocols import (
+    decision,
     decision_prompt,
     decision_skip,
     option_probs,
@@ -24,7 +31,7 @@ class Case:
     milestone: str
 
 
-_INJECT = "user       notice · Q · ⟨J⟩ · [follow | oppose]"
+_INJECT = "user       notice · [follow | oppose] · Q · ⟨J⟩"
 
 CASES = {
     "A1": Case(
@@ -57,15 +64,29 @@ CASES = {
     ),
 }
 
-CONDITIONS = [
-    "no injection",
-    "notice only",
-    "own J",
-    "own J · follow",
-    "own J · oppose",
-    "empty · follow",
-    "empty · oppose",
+INSTRUCTIONS = {"follow": FOLLOW, "oppose": OPPOSE}
+# The blocks: own J, the empty block, and the positive control, a block that
+# plainly argues for the option D didn't pick.
+BLOCKS = ["own J", "empty", "control"]
+
+CONDITIONS = ["no injection", "notice only", "own J"] + [
+    f"{block} · {i}" for block in BLOCKS for i in INSTRUCTIONS
 ]
+
+
+def instructed_prompts(q: str, blocks: dict[str, str]) -> dict[str, str]:
+    """``"{block} · {instruction}"`` → the decision prompt with that fenced
+    block and instruction."""
+    return {
+        f"{block} · {i}": injected_decision_prompt(q, fenced, text)
+        for block, fenced in blocks.items()
+        for i, text in INSTRUCTIONS.items()
+    }
+
+
+def other_option(item, probs: dict) -> str:
+    """The first option D didn't pick: the control block argues for it."""
+    return next(o for o in item.options if o != decision(probs))
 
 
 def latent_thought(lm, item) -> J:
@@ -84,20 +105,23 @@ def run(lm, item, case: str) -> dict:
     if case != "A1":
         raise NotImplementedError(CASES[case].milestone)
     hf_model, model, _ = lm
-    q, j = item.q, fence(latent_thought(lm, item))
-    prompts = {
-        "no injection": decision_prompt(q),
-        "notice only": injected_decision_prompt(q),
-        "own J": injected_decision_prompt(q, j),
-        "own J · follow": injected_decision_prompt(q, j, FOLLOW),
-        "own J · oppose": injected_decision_prompt(q, j, OPPOSE),
-        "empty · follow": injected_decision_prompt(q, EMPTY, FOLLOW),
-        "empty · oppose": injected_decision_prompt(q, EMPTY, OPPOSE),
+    q = item.q
+
+    def probs(prompt):
+        return option_probs(hf_model, model.tokenizer, prompt, item.options)
+
+    out = {"no injection": probs(decision_prompt(q))}
+    other = other_option(item, out["no injection"])
+    blocks = {
+        "own J": fence(latent_thought(lm, item)),
+        "empty": EMPTY,
+        "control": control_block(other, item.actions[other]),
     }
-    return {
-        c: option_probs(hf_model, model.tokenizer, p, item.options)
-        for c, p in prompts.items()
-    }
+    out["notice only"] = probs(injected_decision_prompt(q))
+    out["own J"] = probs(injected_decision_prompt(q, blocks["own J"]))
+    for c, p in instructed_prompts(q, blocks).items():
+        out[c] = probs(p)
+    return out
 
 
 def stability(outcomes: dict) -> float:
@@ -106,12 +130,13 @@ def stability(outcomes: dict) -> float:
     return jsd(outcomes["no injection"], outcomes["own J"])
 
 
-def uptake(outcomes: dict) -> float:
-    """JSD(follow, oppose | own J) − JSD(follow, oppose | empty): how much
-    further the instruction moves D when there is a thought to read."""
-    with_j = jsd(outcomes["own J · follow"], outcomes["own J · oppose"])
+def uptake(outcomes: dict, block: str = "own J") -> float:
+    """JSD(follow, oppose | block) − JSD(follow, oppose | empty): how much
+    further the instruction moves D when there is a thought to read.
+    ``block="control"`` gives the positive control."""
+    with_block = jsd(outcomes[f"{block} · follow"], outcomes[f"{block} · oppose"])
     empty = jsd(outcomes["empty · follow"], outcomes["empty · oppose"])
-    return with_j - empty
+    return with_block - empty
 
 
 def verdict(

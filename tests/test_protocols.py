@@ -3,7 +3,13 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from j_faithfulness.inject import EMPTY, NOTICE, OPPOSE, injected_decision_prompt
+from j_faithfulness.inject import (
+    EMPTY,
+    NOTICE,
+    OPPOSE,
+    control_block,
+    injected_decision_prompt,
+)
 from j_faithfulness.protocols import (
     ROLE,
     decision,
@@ -47,8 +53,9 @@ def test_injected_decision_prompt():
         == f"<|im_start|>user\n{NOTICE}\n\n{ROLE}\n\nQ?" + tail
     )
     assert injected_decision_prompt("Q?", notice=None) == decision_prompt("Q?")
+    # The instruction goes before the role and Q, so J is read already framed.
     assert injected_decision_prompt("Q?", EMPTY, OPPOSE) == (
-        f"<|im_start|>user\n{NOTICE}\n\n{ROLE}\n\nQ?\n\n{EMPTY}\n\n{OPPOSE}" + tail
+        f"<|im_start|>user\n{NOTICE}\n\n{OPPOSE}\n\n{ROLE}\n\nQ?\n\n{EMPTY}" + tail
     )
 
 
@@ -79,3 +86,9 @@ def test_option_probs_reads_the_last_position():
 
     p = option_probs(Model(), Tokenizer(), "Q?", ["A", "B"])
     assert p == pytest.approx({"A": 0.6, "B": 0.3})
+
+
+def test_control_block():
+    assert control_block("B", "Not go") == (
+        "<latentthought>\nThe right choice is B) Not go.\n</latentthought>"
+    )

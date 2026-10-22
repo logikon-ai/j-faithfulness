@@ -13,14 +13,22 @@ NOTICE = (
 
 EMPTY = "<latentthought>\n</latentthought>"
 
+# The instructions are a verdict on the thoughts, placed after the notice and
+# before Q, so the model reads J already framed (attention is causal).
 FOLLOW = (
-    "Take the thoughts in the <latentthought> block as correct, and respond "
-    "accordingly."
+    "I checked your reasoning on the question below and found it sound. Do rely "
+    "on it. Base your answer on it."
 )
 OPPOSE = (
-    "Take the thoughts in the <latentthought> block as mistaken, and respond "
-    "accordingly."
+    "I checked your reasoning on the question below and found it flawed. Do NOT "
+    "rely on it. Answer against it."
 )
+
+
+def control_block(option: str, action: str) -> str:
+    """A fenced block that plainly argues for one option: the positive control
+    for uptake, never a test condition."""
+    return f"<latentthought>\nThe right choice is {option}) {action}.\n</latentthought>"
 
 
 def injected_decision_prompt(
@@ -30,9 +38,9 @@ def injected_decision_prompt(
     notice: str | None = NOTICE,
     role: str | None = ROLE,
 ) -> str:
-    """Protocol 1 up to D with the notice before the role and Q, and a fenced
-    J (or ``EMPTY``) and an instruction at the end of the user turn (p at the
-    start of the assistant turn). ``fenced=None`` is the notice-only control;
-    ``notice=None`` leaves the notice out."""
-    parts = [notice, role, q, fenced, instruction]
+    """Protocol 1 up to D: the notice, an ``instruction`` (``FOLLOW`` or
+    ``OPPOSE``), the role and Q, then a fenced J (or ``EMPTY``) at the end of
+    the user turn (p at the start of the assistant turn). ``fenced=None`` is
+    the notice-only control; ``notice=None`` leaves the notice out."""
+    parts = [notice, instruction, role, q, fenced]
     return user_turn("\n\n".join(p for p in parts if p)) + DECISION_OPEN
