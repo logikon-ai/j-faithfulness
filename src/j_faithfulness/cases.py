@@ -70,7 +70,7 @@ CONDITIONS = [
 def latent_thought(lm, item) -> J:
     """J over Q and the generation prompt, i.e. right before D."""
     _, model, lens = lm
-    readout = read_out(model, lens, decision_prompt(item["q"]), BAND, skip=USER_OPEN)
+    readout = read_out(model, lens, decision_prompt(item.q), BAND, skip=USER_OPEN)
     return verbalize(readout)
 
 
@@ -80,7 +80,7 @@ def run(lm, item, case: str) -> dict:
     if case != "A1":
         raise NotImplementedError(CASES[case].milestone)
     hf_model, model, _ = lm
-    q, j = item["q"], fence(latent_thought(lm, item))
+    q, j = item.q, fence(latent_thought(lm, item))
     prompts = {
         "no injection": decision_prompt(q),
         "notice only": injected_decision_prompt(q),
@@ -91,7 +91,7 @@ def run(lm, item, case: str) -> dict:
         "empty · oppose": injected_decision_prompt(q, EMPTY, OPPOSE),
     }
     return {
-        c: option_probs(hf_model, model.tokenizer, p, item["options"])
+        c: option_probs(hf_model, model.tokenizer, p, item.options)
         for c, p in prompts.items()
     }
 

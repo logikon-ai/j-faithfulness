@@ -54,14 +54,15 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
       Qwen3.5-4B. The notebook runs through and plots.
 - [x] `inject.py`: notice, empty block, follow and oppose instructions
 - [x] `compare.py`: JSD (stability and uptake)
-- [ ] `items.py`: the shared item format (Q, options, reference concepts,
-      domain; DESIGN.md, Items and adapters) and the DailyDilemmas adapter. It
-      turns the test split (one row per option) into binary items, with
-      `topic_group` as the domain: Q = the dilemma situation, A = to do,
-      B = not to do, each with its action and values. Fixed, disjoint dev and
-      test samples (seeded); start small (about 10 dev items). The one-hop
-      items go, and the walkthrough reads the reference concepts instead of
-      `intermediate`.
+- [x] `items.py`: the shared item format (`Item`: id, Q, options, actions,
+      reference concepts, domain; DESIGN.md, Items and adapters) and the
+      DailyDilemmas adapter. It reads the dataset's CSV at a pinned revision
+      and turns each dilemma (one row per option) into a binary item:
+      Q = the situation, A = to do, B = not to do, the values as reference
+      concepts, `topic_group` as the domain; the consequences stay out of Q.
+      `split` gives fixed, disjoint dev and test halves. The notebook selects
+      by split, number of items and domains; the walkthrough shows which of
+      each option's values J touches. The one-hop items are gone.
 - [ ] Walkthrough section: read-out check on the dev items with thinking
       off. Does J surface the annotated values (overlap with each option's
       values, and with D's)? Revisit band and thresholds if needed.

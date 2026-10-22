@@ -478,6 +478,7 @@ name = "j-faithfulness"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "huggingface-hub" },
     { name = "jlens" },
     { name = "torch" },
     { name = "transformers" },
@@ -493,6 +494,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "huggingface-hub" },
     { name = "jlens", git = "https://github.com/anthropics/jacobian-lens.git?rev=581d398613e5602a5af361e1c34d3a92ea82ba8e" },
     { name = "torch" },
     { name = "transformers", specifier = ">=5.5" },

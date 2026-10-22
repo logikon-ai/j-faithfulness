@@ -419,8 +419,11 @@ The notebook (`notebooks/demo.py`, marimo) is laid out as in Scope above.
 - **Ceiling on the follow side.** J's lean usually agrees with the original
   answer, so "follow" may barely move D and most of the uptake signal comes
   from "oppose". Items where J's lean and D diverge would help, if they exist.
-- **Gate threshold.** How large must uptake be, relative to the noise floor,
-  to count as "yes"? Per model or per item?
+- **Gate threshold.** The default is uptake > 0.04 nats (beyond the empty
+  block, follow and oppose separate P(A) about as much as 0.36 vs 0.64). D's
+  probabilities are exact, so the noise to beat is prompt sensitivity: the
+  spread of uptake under harmless rewordings of the instructions would
+  calibrate it. Per model or per item?
 - **Lexical distance and stance.** The follow and oppose outputs may differ in
   stance more than in wording, which a lexical distance can miss. The
   teacher-forced log P should still pick it up; if neither does, this is the
