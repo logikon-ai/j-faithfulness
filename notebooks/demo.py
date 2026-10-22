@@ -269,11 +269,20 @@ def _(CASES, chosen, lm, mo, run, run_button):
     # that isn't built yet. traces[item id]: the sampled R′ per A2 condition.
     results = {}
     traces = {i.id: {} for i in chosen}
-    for _case in CASES:
-        try:
-            results[_case] = {i.id: run(lm, i, _case, traces[i.id]) for i in chosen}
-        except NotImplementedError:
-            results[_case] = None
+    with mo.status.progress_bar(
+        total=len(CASES) * len(chosen), title="Scoring", remove_on_exit=True
+    ) as _bar:
+        for _case in CASES:
+            results[_case] = {}
+            for _item in chosen:
+                _bar.update(subtitle=f"{_case} · {_item.id}", increment=0)
+                try:
+                    results[_case][_item.id] = run(lm, _item, _case, traces[_item.id])
+                except NotImplementedError:
+                    results[_case] = None
+                    _bar.update(increment=len(chosen))
+                    break
+                _bar.update()
     return results, traces
 
 
