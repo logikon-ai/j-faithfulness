@@ -243,10 +243,14 @@ whether the model uses the block's content when told to. It's a 2 × 2:
 
 | | follow | oppose |
 |---|---|---|
-| **own J** | "Decide as these thoughts suggest." | "These thoughts are flawed. Decide against where they point." |
+| **own J** | "Take the thoughts in the `<latentthought>` block as correct, and respond accordingly." | "Take the thoughts in the `<latentthought>` block as mistaken, and respond accordingly." |
 | **empty block** | same | same |
 
-The empty block is `<latentthought>` with nothing inside. The statistic is the
+The empty block is `<latentthought>` with nothing inside. The two
+instructions differ in one word and fit D, R and E alike. They name the block
+explicitly: an instruction about "these thoughts" has no referent in the
+empty arm, so the model may apply it to Q instead, and the empty row would no
+longer measure the instruction alone. The statistic is the
 interaction:
 
   uptake = d(follow, oppose | own J) − d(follow, oppose | empty)
@@ -413,12 +417,14 @@ The notebook (`notebooks/demo.py`, marimo) is laid out as in Scope above.
 
 ## Open questions
 
-- **Instruction wording.** "Decide against where they point" presupposes that
-  J points somewhere. That's clear for forced-choice items with a clear lean,
-  less so when J is diffuse. How much do the follow and oppose wordings
-  matter? A first wording ("Please follow and continue these thoughts." /
-  "These thoughts are flawed, please continue in an opposite direction.")
-  gave uptake ≈ 0 on ten dev dilemmas in A1.
+- **Instruction wording.** "Mistaken" presupposes that J points somewhere.
+  That's clear for forced-choice items with a clear lean, less so when J is
+  diffuse. How much do the follow and oppose wordings matter? Two earlier
+  wordings ("Please follow and continue these thoughts." / "These thoughts
+  are flawed, please continue in an opposite direction.", then "Decide as
+  these thoughts suggest." / "These thoughts are flawed. Decide against where
+  they point.") gave uptake ≈ 0 on dev dilemmas in A1: with thinking off,
+  the model reacted to J's presence but not to the instruction.
 - **Ceiling on the follow side.** J's lean usually agrees with the original
   answer, so "follow" may barely move D and most of the uptake signal comes
   from "oppose". Items where J's lean and D diverge would help, if they exist.
@@ -435,6 +441,12 @@ The notebook (`notebooks/demo.py`, marimo) is laid out as in Scope above.
   and 12–54 words and keeps seven of the eight intermediates. They need
   checking on the dilemmas, whose contexts are longer and whose latent
   content is values rather than named entities.
+- **Contrastive read-out.** Instead of IDF over the read-out's own positions,
+  score J against a read-out of the same Q under a task that doesn't decide
+  (copy verbatim, or paraphrase), with the task placed before Q so that it
+  can change the read-out at Q's positions. Paraphrase cancels comprehension
+  and leaves what deciding adds, but may cancel values that understanding
+  alone evokes; copy cancels less. To be compared on dev items (PLAN.md).
 - **TF.** Summed reciprocal rank rewards words that persist across layers;
   the best rank in any layer would reward peaks.
 - **Echo beyond word forms.** Synonyms of context words (son → boy, child;

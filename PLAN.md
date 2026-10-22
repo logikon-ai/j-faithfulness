@@ -63,9 +63,25 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
       `split` gives fixed, disjoint dev and test halves. The notebook selects
       by split, number of items and domains; the walkthrough shows which of
       each option's values J touches. The one-hop items are gone.
-- [ ] Walkthrough section: read-out check on the dev items with thinking
-      off. Does J surface the annotated values (overlap with each option's
-      values, and with D's)? Revisit band and thresholds if needed.
+- [x] First dilemma run (10 dev items, A1): uptake ≈ 0 on every item, under
+      two wordings of the instructions. The model reacts to J's presence but
+      not to the instruction. Instructions now name the block and differ in
+      one word ("Take the thoughts in the <latentthought> block as correct /
+      mistaken, and respond accordingly.").
+- [ ] Rerun uptake on the 10 dev items with the new instructions.
+- [ ] Read-out check on the dev items with thinking off: does J surface the
+      annotated values (overlap with each option's values, and with D's)?
+      Values that also occur in Q can't appear in J (context echo is
+      dropped), so count them separately.
+- [ ] **Contrastive read-out.** The current J is only semi-useful. Read out Q
+      under three task prefixes placed *before* Q (causal attention: a task
+      after Q can't change the read-out at Q's positions): copy verbatim,
+      paraphrase, decide. Score words by the decide read-out against a
+      baseline (TF difference or log ratio, replacing or combining with
+      IDF). decide − paraphrase should leave what deciding adds; decide −
+      copy also keeps comprehension. Compare on the 10 dev items which J
+      surfaces more annotated values, and fewer topic and format words;
+      then rebuild `verbalize` around the better baseline.
 - [ ] **Checkpoint:** if J carries no value content with thinking off, the
       pilot moves to thinking on (protocol 2, J read out before R) and M3's
       protocol work comes first.
