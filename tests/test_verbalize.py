@@ -5,23 +5,27 @@ import pytest
 from j_faithfulness.lens import LatentReadout
 from j_faithfulness.verbalize import (
     Row,
+    contrast,
     document,
     echoes,
     fence,
+    in_context,
     is_english,
     is_latin,
     is_word_like,
     tf_idf,
+    touches,
     verbalize,
     words,
 )
 
 
-def readout(*positions, context=""):
-    """``positions[i][j]``: ranked tokens at position i, layer j."""
+def readout(*positions, context="", tokens=None):
+    """``positions[i][j]``: ranked tokens at position i, layer j; ``tokens``
+    the context token at each position."""
     return LatentReadout(
         context=context,
-        context_tokens=[],
+        context_tokens=tokens or [f"w{i}" for i in range(len(positions))],
         positions=list(range(len(positions))),
         layers=list(range(len(positions[0]))),
         top=[[list(ranked) for ranked in p] for p in positions],
@@ -151,3 +155,52 @@ def test_words():
 def test_fence():
     j = [Row(3, ["a", "b"]), Row(7, ["c"])]
     assert fence(j) == "<latentthought>\na, b.\nc.\n</latentthought>"
+
+
+def test_contrast_diff_and_ratio():
+    decide = readout([["fair", "Answer"], ["fair", "honest"]])
+    copy = readout([["Answer", "fair"], ["text"]])
+    # fair: tf 1 + 1 here, 1/2 in copy; Answer: 1/2 vs 1; honest: 1/2 vs 0.
+    (diff,) = contrast(decide, copy)
+    assert diff == pytest.approx(
+        {"fair": (2, 1.5), "Answer": (0.5, -0.5), "honest": (0.5, 0.5)}
+    )
+    (ratio,) = contrast(decide, copy, "ratio", smoothing=0.5)
+    assert ratio["fair"] == pytest.approx((2, math.log(2.5 / 1)))
+    assert ratio["honest"] == pytest.approx((0.5, math.log(1 / 0.5)))
+
+
+def test_contrast_needs_the_same_words():
+    a = readout([["x"]], tokens=["Q"])
+    b = readout([["x"]], tokens=["P"])
+    with pytest.raises(ValueError):
+        contrast(a, b)
+
+
+def test_verbalize_against_a_baseline():
+    decide = readout([["Answer", "fair"]], [["Answer", "kind"]])
+    copy = readout([["Answer"]], [["Answer"]])
+    # Answer is as strong in copy: diff 0. fair and kind: tf 1/2, diff 1/2.
+    assert verbalize(decide, copy, min_tf=0.5, min_score=0.5) == [
+        Row(0, ["fair"]),
+        Row(1, ["kind"]),
+    ]
+    assert verbalize(decide, copy, min_tf=0.5, min_score=0.6) == []
+
+
+def test_touches():
+    j = [Row(0, ["honest", "others"]), Row(1, ["career"])]
+    assert touches(j, "Honesty")
+    assert touches(j, "respect for others")
+    assert touches(j, "Career advancement")
+    assert not touches(j, "Loyalty")
+    # Stopwords don't match.
+    assert not touches([Row(0, ["for"])], "respect for autonomy")
+
+
+def test_in_context():
+    q = "Should I tell my friend the honest truth about the loan?"
+    assert in_context("Honesty", q)
+    assert in_context("Friendship", q)
+    assert not in_context("Loyalty", q)
+    assert not in_context("Respect for others", "Should I go for it?")

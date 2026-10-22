@@ -90,7 +90,9 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
       should leave what deciding adds (comprehension cancels); decide − copy
       also keeps comprehension. Compare on the 10 dev items which J surfaces
       more annotated values, and fewer topic and format words; then rebuild
-      `verbalize` around the better baseline.
+      `verbalize` around the better baseline. Built, to run on molab:
+      `task_prompt`, `verbalize(readout, baseline, measure)`, and
+      `notebooks/contrast.py`, which also does the read-out check above.
 - [ ] **Checkpoint:** if J carries no value content with thinking off, the
       pilot moves to thinking on (protocol 2, J read out before R) and M3's
       protocol work comes first.

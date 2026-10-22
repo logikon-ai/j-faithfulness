@@ -9,6 +9,7 @@ from j_faithfulness.protocols import (
     decision_prompt,
     option_distribution,
     option_probs,
+    task_prompt,
 )
 
 
@@ -17,6 +18,16 @@ def test_decision_prompt_matches_template():
     # enable_thinking=False) for Qwen3.5-4B.
     assert decision_prompt("Q?") == (
         "<|im_start|>user\nQ?<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+    )
+
+
+def test_task_prompt():
+    prompt, skip = task_prompt("Q?", "decide")
+    assert skip == (
+        "<|im_start|>user\nYou are an advisor. Decide the following question.\n\n"
+    )
+    assert (
+        prompt == skip + "Q?<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
     )
 
 

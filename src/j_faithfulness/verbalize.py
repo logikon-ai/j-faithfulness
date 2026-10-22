@@ -4,6 +4,10 @@ Each ranked list of the read-out (one position, one layer) is a document.
 At a position, a word scores TF × IDF: TF sums its reciprocal ranks over the
 layers, and IDF counts the documents at the other positions that contain it,
 so a concept that persists through the layers doesn't raise its own count.
+
+Against a baseline read-out of the same Q under another task (the contrastive
+read-out, PLAN.md M1), a word instead scores its TF here against its TF at the
+same word of the baseline.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass
+from typing import Literal
 
 from wordfreq import zipf_frequency
 
@@ -100,6 +105,22 @@ def document(ranked: list[str]) -> dict[str, tuple[int, str]]:
     return best
 
 
+def term_freqs(readout: LatentReadout) -> list[dict[str, tuple[float, str]]]:
+    """Per position: ``{casefolded word: (tf, form at its best rank)}``, TF
+    summing the word's reciprocal ranks over the layers."""
+    out = []
+    for layers in readout.top:
+        tf: Counter[str] = Counter()
+        form: dict[str, tuple[int, str]] = {}
+        for ranked in layers:
+            for key, (rank, word) in document(ranked).items():
+                tf[key] += 1 / (rank + 1)
+                if key not in form or rank < form[key][0]:
+                    form[key] = (rank, word)
+        out.append({key: (t, form[key][1]) for key, t in tf.items()})
+    return out
+
+
 def tf_idf(readout: LatentReadout) -> list[dict[str, tuple[float, float]]]:
     """Per position: ``{word: (tf, idf)}``, each word in the form it has at
     its best rank there.
@@ -111,42 +132,71 @@ def tf_idf(readout: LatentReadout) -> list[dict[str, tuple[float, float]]]:
     df = Counter(key for layers in docs for d in layers for key in d)
     n = sum(len(layers) for layers in docs)
     out = []
-    for layers in docs:
+    for layers, tfs in zip(docs, term_freqs(readout), strict=True):
         own = Counter(key for d in layers for key in d)
-        tf: Counter[str] = Counter()
-        form: dict[str, tuple[int, str]] = {}
-        for d in layers:
-            for key, (rank, word) in d.items():
-                tf[key] += 1 / (rank + 1)
-                if key not in form or rank < form[key][0]:
-                    form[key] = (rank, word)
         n_rest = n - len(layers)
         out.append(
             {
-                form[key][1]: (
+                word: (
                     t,
                     math.log((n_rest + 1) / (df[key] - own[key] + 1))
                     if n_rest
                     else 1.0,
                 )
-                for key, t in tf.items()
+                for key, (t, word) in tfs.items()
             }
         )
     return out
 
 
+def span_words(readout: LatentReadout) -> list[str]:
+    """The context token at each read-out position."""
+    return [readout.context_tokens[p] for p in readout.positions]
+
+
+def contrast(
+    readout: LatentReadout,
+    baseline: LatentReadout,
+    measure: Literal["diff", "ratio"] = "diff",
+    smoothing: float = 0.1,
+) -> list[dict[str, tuple[float, float]]]:
+    """Per position: ``{word: (tf, score)}``, scoring TF here against TF at
+    the same word of ``baseline`` (0 where the word isn't in its top tokens):
+    their difference, or ``log((tf + smoothing) / (tf_base + smoothing))``.
+
+    Both read-outs must cover the same words (e.g. Q under two task
+    prefixes).
+    """
+    if span_words(readout) != span_words(baseline):
+        raise ValueError("read-outs cover different words")
+    out = []
+    for tfs, base in zip(term_freqs(readout), term_freqs(baseline), strict=True):
+        scored = {}
+        for key, (t, word) in tfs.items():
+            b = base.get(key, (0.0, ""))[0]
+            if measure == "diff":
+                scored[word] = (t, t - b)
+            else:
+                scored[word] = (t, math.log((t + smoothing) / (b + smoothing)))
+        out.append(scored)
+    return out
+
+
 def verbalize(
     readout: LatentReadout,
+    baseline: LatentReadout | None = None,
+    measure: Literal["diff", "ratio"] = "diff",
     k: int = 5,
     min_tf: float = 1.0,
     min_score: float = 1.0,
     min_zipf: float = 2.5,
 ) -> J:
     """J: per position, up to ``k`` words by TF × IDF, best first; positions
-    left without words are omitted.
+    left without words are omitted. With a ``baseline``, words score by
+    :func:`contrast` instead.
 
     A word needs TF ≥ ``min_tf`` (so rare garbage isn't boosted by its IDF)
-    and TF × IDF ≥ ``min_score``. Left out are words of the context and their
+    and a score ≥ ``min_score``. Left out are words of the context and their
     variants (at a word of Q the lens partly predicts Q's next word), words in
     other scripts (mostly translations of English ones), and words that aren't
     English (see :func:`is_english`). The defaults were tuned on the one-hop
@@ -157,19 +207,48 @@ def verbalize(
     def keep(w: str) -> bool:
         return not echoes(w, context_words) and is_latin(w) and is_english(w, min_zipf)
 
+    if baseline is None:
+        scores = [
+            {w: (tf, tf * idf) for w, (tf, idf) in scored.items()}
+            for scored in tf_idf(readout)
+        ]
+    else:
+        scores = contrast(readout, baseline, measure)
     j = []
-    for position, scored in zip(readout.positions, tf_idf(readout), strict=True):
+    for position, scored in zip(readout.positions, scores, strict=True):
         ranked = sorted(
             (
-                (tf * idf, w)
-                for w, (tf, idf) in scored.items()
-                if tf >= min_tf and tf * idf >= min_score and keep(w)
+                (score, w)
+                for w, (tf, score) in scored.items()
+                if tf >= min_tf and score >= min_score and keep(w)
             ),
             key=lambda sw: -sw[0],
         )
         if ranked:
             j.append(Row(position, [w for _, w in ranked[:k]]))
     return j
+
+
+# Left out when matching reference concepts against J ("respect for others").
+CONCEPT_STOPWORDS = {"a", "an", "and", "for", "in", "of", "on", "the", "to", "with"}
+
+
+def concept_words(concept: str) -> set[str]:
+    return words(concept) - CONCEPT_STOPWORDS
+
+
+def touches(j: J, concept: str) -> bool:
+    """A word of J is a word of ``concept`` or a variant of one (see
+    :func:`echoes`): honest touches Honesty."""
+    cw = concept_words(concept)
+    return any(echoes(w, cw) for row in j for w in row.words)
+
+
+def in_context(concept: str, context: str) -> bool:
+    """A word of ``concept`` echoes ``context``. Such a concept can't show in J,
+    which drops context echo."""
+    cw = words(context)
+    return any(echoes(w, cw) for w in concept_words(concept))
 
 
 def fence(j: J) -> str:

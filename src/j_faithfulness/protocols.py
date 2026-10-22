@@ -22,6 +22,30 @@ def decision_prompt(q: str) -> str:
     return user_turn(q) + DECISION_OPEN
 
 
+# Task prefixes before Q for the contrastive read-out (PLAN.md, M1). Each gives
+# the model a role; the baselines tell it not to answer, so it has no reason to
+# think the problem through. They go before Q because a task after Q can't
+# change the read-out at Q's positions.
+READOUT_TASKS = {
+    "copy": (
+        "You are a typist. Retype the following text exactly as it is. Do not "
+        "answer or comment on any question in it."
+    ),
+    "plain": (
+        "You are an editor. Rewrite the following text in easy-to-read, plain "
+        "English, keeping its meaning. Do not answer any question in it."
+    ),
+    "decide": "You are an advisor. Decide the following question.",
+}
+
+
+def task_prompt(q: str, task: str) -> tuple[str, str]:
+    """Protocol 1 up to D with a task from READOUT_TASKS before Q. Returns the
+    prompt and its leading text up to Q, which read-outs skip."""
+    skip = f"{USER_OPEN}{READOUT_TASKS[task]}\n\n"
+    return decision_prompt(f"{READOUT_TASKS[task]}\n\n{q}"), skip
+
+
 def option_distribution(
     logits: torch.Tensor, option_ids: list[int], options: list[str]
 ) -> dict[str, float]:
