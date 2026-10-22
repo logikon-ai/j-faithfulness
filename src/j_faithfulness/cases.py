@@ -9,11 +9,12 @@ from j_faithfulness.compare import jsd
 from j_faithfulness.inject import EMPTY, FOLLOW, OPPOSE, injected_decision_prompt
 from j_faithfulness.lens import BAND, read_out
 from j_faithfulness.protocols import (
-    USER_OPEN,
     decision_prompt,
+    decision_skip,
     option_probs,
+    task_prompt,
 )
-from j_faithfulness.verbalize import J, fence, verbalize
+from j_faithfulness.verbalize import J, fence, verbalize_against
 
 
 @dataclass(frozen=True)
@@ -68,10 +69,13 @@ CONDITIONS = [
 
 
 def latent_thought(lm, item) -> J:
-    """J over Q and the generation prompt, i.e. right before D."""
+    """J over Q and the generation prompt, i.e. right before D, minus the
+    words of the read-out of Q under the copy task."""
     _, model, lens = lm
-    readout = read_out(model, lens, decision_prompt(item.q), BAND, skip=USER_OPEN)
-    return verbalize(readout)
+    readout = read_out(model, lens, decision_prompt(item.q), BAND, skip=decision_skip())
+    copy, skip = task_prompt(item.q, "copy")
+    baseline = read_out(model, lens, copy, BAND, skip=skip)
+    return verbalize_against(readout, baseline)
 
 
 def run(lm, item, case: str) -> dict:

@@ -68,12 +68,14 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
       not to the instruction. Instructions now name the block and differ in
       one word ("Take the thoughts in the <latentthought> block as correct /
       mistaken, and respond accordingly.").
-- [ ] Rerun uptake on the 10 dev items with the new instructions.
-- [ ] Read-out check on the dev items with thinking off: does J surface the
-      annotated values (overlap with each option's values, and with D's)?
-      Values that also occur in Q can't appear in J (context echo is
-      dropped), so count them separately.
-- [ ] **Contrastive read-out.** The current J is only semi-useful. Read out
+- [x] Rerun uptake on the 10 dev items with the new instructions: still ≈ 0
+      (at most 0.010), stability ≈ 0 too. "Correct" and "mistaken" move D as
+      much as with an empty block.
+- [x] Read-out check on the dev items with thinking off: J (TF × IDF) hits 8
+      of 41 values of D's option and 7 of 40 of the other's, with no lean
+      toward D; it holds topic and format words. Values that also occur in Q
+      can't appear in J (context echo is dropped), so they're counted apart.
+- [x] **Contrastive read-out** (`notebooks/contrast.py`). The current J is only semi-useful. Read out
       Q under three task prefixes placed *before* Q (causal attention: a task
       after Q can't change the read-out at Q's positions). Each gives the
       model a role; the two baselines tell it not to answer, so it has no
@@ -90,9 +92,14 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
       should leave what deciding adds (comprehension cancels); decide − copy
       also keeps comprehension. Compare on the 10 dev items which J surfaces
       more annotated values, and fewer topic and format words; then rebuild
-      `verbalize` around the better baseline. Built, to run on molab:
-      `task_prompt`, `verbalize(readout, baseline, measure)`, and
-      `notebooks/contrast.py`, which also does the read-out check above.
+      `verbalize` around the better baseline. Result: position-by-position
+      scores lose values; subtracting every word of the copy baseline's J
+      (both loose: k 50, TF ≥ 0.5; then k 10) hits 11 of 41 values of D's
+      option and 2 of 40 of the other's. J is now decide ∖ copy
+      (`verbalize_against`), and the decision prompt carries the advisor
+      role (DESIGN.md, Latent readout J(X)).
+- [ ] Rerun uptake on the 10 dev items with J = decide ∖ copy and the role in
+      the decision prompt (demo.py, A1).
 - [ ] **Checkpoint:** if J carries no value content with thinking off, the
       pilot moves to thinking on (protocol 2, J read out before R) and M3's
       protocol work comes first.

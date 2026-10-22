@@ -17,6 +17,7 @@ from j_faithfulness.verbalize import (
     tf_idf,
     touches,
     verbalize,
+    verbalize_against,
     words,
 )
 
@@ -213,5 +214,13 @@ def test_subtract_drops_baseline_words_anywhere():
         Row(1, ["marriage"]),
         Row(2, ["a", "b", "c"]),
     ]
-    baseline = [Row(5, ["girlfriend", "marriage"])]
+    baseline = [Row(5, ["girlfriends", "marriage"])]
     assert subtract(j, baseline, k=2) == [Row(0, ["fair", "kind"]), Row(2, ["a", "b"])]
+
+
+def test_verbalize_against():
+    # Position 0: fair and kinder (rank 0 in both layers); position 1: Answer.
+    decide = readout([["fair", "kinder"], ["kinder", "fair"]], [["Answer"], ["Answer"]])
+    copy = readout([["kind"], ["kind"]], [["answers"], ["answers"]])
+    # kinder and Answer are variants of baseline words.
+    assert verbalize_against(decide, copy) == [Row(0, ["fair"])]

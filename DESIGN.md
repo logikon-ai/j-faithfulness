@@ -52,6 +52,12 @@ leading space after `</think>\n\n`. `lens.apply` truncates from the right at
 `max_seq_len` (default 512), which would cut off the end of the context, so
 we always pass a `max_seq_len` above the transcript length.
 
+The user turn gives the model a role before Q: "You are an advisor. Decide
+the following question." J is scored against a read-out of Q under a task
+that doesn't ask for a decision (see Latent readout J(X)), and the role is
+part of the decision prompt itself, so D, J and D′ come from the same
+context.
+
 
 ## Construct: local faithfulness (reason-responsiveness)
 
@@ -138,7 +144,7 @@ token. Intermediates surface where they are computed ("Italy" at "boot" in
 before X the final layers predict X itself while the middle layers hold
 response format. The span for D in protocol 1 is the whole context: Q and the
 generation prompt, minus the opening `<|im_start|>user\n`, whose read-out is
-the same junk on every prompt. On eight one-hop items, J over the span
+the same junk on every prompt, and the role line. On eight one-hop items, J over the span
 surfaced the known intermediate on seven; J at the last token alone, on none.
 The intermediates surface at the word that cues them (Italy at "boot", Paris
 at "Eiff**el**") and at the line break after the user turn, where the model
@@ -186,6 +192,23 @@ J(X) is built in four steps:
 4. **Verbalize** each remaining position as one row: its top-k words (k = 5)
    by TF × IDF. Rows appear in context order and carry no reference to the
    word they come from.
+
+Built this way, J over a dilemma is mostly what reading Q evokes: topic
+associations (girlfriend, divorce at a relationship dilemma) and format words
+(Choice, Option at the option labels). So J is **contrasted with a copy
+baseline**: Q read out a second time under "You are a typist. Retype the
+following text exactly as it is. Do not answer or comment on any question in
+it." Both read-outs go through steps 1–4 with looser settings (k = 50,
+`min_tf` = 0.5). Every word of the baseline's J, or a variant of one (as in
+step 3: couple ← couples), is dropped from J wherever it occurs, and J keeps
+the top 10 words per position. What remains is what deciding adds: at that
+relationship dilemma, harming, hurting, embarrassment at the option to give
+the note, and safest, preserving, prioritize at the end. On 10 dev dilemmas
+(with exact-word subtraction), hits on the annotated values of D's option
+rose from 8 to 11 of 41 and hits on the other option's fell from 7 to 2.
+Matching position by position (TF difference or log ratio against the same
+word of the baseline) lost values, and so did a plain-English rewrite as the
+baseline, since rewriting already evokes some of the values.
 
 J(X) is a sequence of keyword rows, not prose. It preserves the flow through
 the context.

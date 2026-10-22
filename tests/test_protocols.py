@@ -5,8 +5,10 @@ import torch
 
 from j_faithfulness.inject import EMPTY, NOTICE, OPPOSE, injected_decision_prompt
 from j_faithfulness.protocols import (
+    ROLE,
     decision,
     decision_prompt,
+    decision_skip,
     option_distribution,
     option_probs,
     task_prompt,
@@ -16,9 +18,11 @@ from j_faithfulness.protocols import (
 def test_decision_prompt_matches_template():
     # apply_chat_template([user Q], add_generation_prompt=True,
     # enable_thinking=False) for Qwen3.5-4B.
-    assert decision_prompt("Q?") == (
+    assert decision_prompt("Q?", None) == (
         "<|im_start|>user\nQ?<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
     )
+    assert decision_prompt("Q?") == decision_prompt(f"{ROLE}\n\nQ?", None)
+    assert decision_prompt("Q?").startswith(decision_skip())
 
 
 def test_task_prompt():
@@ -29,18 +33,22 @@ def test_task_prompt():
     assert (
         prompt == skip + "Q?<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
     )
+    assert (prompt, skip) == (decision_prompt("Q?"), decision_skip())
 
 
 def test_injected_decision_prompt():
     tail = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
     assert injected_decision_prompt("Q?", "<latentthought>\na.\n</latentthought>") == (
-        f"<|im_start|>user\n{NOTICE}\n\nQ?\n\n<latentthought>\na.\n</latentthought>"
-        + tail
+        f"<|im_start|>user\n{NOTICE}\n\n{ROLE}\n\nQ?\n\n"
+        "<latentthought>\na.\n</latentthought>" + tail
     )
-    assert injected_decision_prompt("Q?") == f"<|im_start|>user\n{NOTICE}\n\nQ?" + tail
+    assert (
+        injected_decision_prompt("Q?")
+        == f"<|im_start|>user\n{NOTICE}\n\n{ROLE}\n\nQ?" + tail
+    )
     assert injected_decision_prompt("Q?", notice=None) == decision_prompt("Q?")
     assert injected_decision_prompt("Q?", EMPTY, OPPOSE) == (
-        f"<|im_start|>user\n{NOTICE}\n\nQ?\n\n{EMPTY}\n\n{OPPOSE}" + tail
+        f"<|im_start|>user\n{NOTICE}\n\n{ROLE}\n\nQ?\n\n{EMPTY}\n\n{OPPOSE}" + tail
     )
 
 

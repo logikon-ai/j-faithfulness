@@ -35,12 +35,13 @@ def _():
     from j_faithfulness.items import load_daily_dilemmas, split
     from j_faithfulness.lens import BAND, load, read_out
     from j_faithfulness.protocols import (
-        USER_OPEN,
         decision,
         decision_prompt,
+        decision_skip,
         option_probs,
+        task_prompt,
     )
-    from j_faithfulness.verbalize import fence, verbalize, words
+    from j_faithfulness.verbalize import fence, verbalize_against, words
 
     return (
         BAND,
@@ -49,10 +50,10 @@ def _():
         EMPTY,
         FOLLOW,
         OPPOSE,
-        USER_OPEN,
         alt,
         decision,
         decision_prompt,
+        decision_skip,
         fence,
         injected_decision_prompt,
         jsd,
@@ -65,8 +66,9 @@ def _():
         run,
         split,
         stability,
+        task_prompt,
         uptake,
-        verbalize,
+        verbalize_against,
         verdict,
         words,
     )
@@ -162,9 +164,24 @@ def _(hf_model, item, model, option_probs, prompt):
 
 
 @app.cell
-def _(BAND, USER_OPEN, lens, model, prompt, read_out, verbalize):
-    readout = read_out(model, lens, prompt, BAND, skip=USER_OPEN)
-    j = verbalize(readout)
+def _(BAND, decision_skip, lens, model, prompt, read_out):
+    readout = read_out(model, lens, prompt, BAND, skip=decision_skip())
+    return (readout,)
+
+
+@app.cell
+def _(BAND, item, lens, model, read_out, task_prompt):
+    # The baseline: the same Q under a task that doesn't ask for a decision.
+    copy_prompt, copy_skip = task_prompt(item.q, "copy")
+    print(copy_prompt)
+    baseline = read_out(model, lens, copy_prompt, BAND, skip=copy_skip)
+    return (baseline,)
+
+
+@app.cell
+def _(baseline, readout, verbalize_against):
+    # J: the read-out's words minus every word of the baseline's.
+    j = verbalize_against(readout, baseline)
     [(readout.context_tokens[row.position], row.words) for row in j]
     return (j,)
 

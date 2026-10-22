@@ -16,10 +16,25 @@ def user_turn(text: str) -> str:
     return f"{USER_OPEN}{text}<|im_end|>\n"
 
 
-def decision_prompt(q: str) -> str:
-    """Protocol 1 up to D: Q, then the assistant turn with thinking off. Its last
-    token is where D is produced."""
-    return user_turn(q) + DECISION_OPEN
+# Protocol 1 gives the model a role before Q: the decide task of the
+# contrastive read-out, so J (read out under it) comes from the context it's
+# injected into.
+ROLE = "You are an advisor. Decide the following question."
+
+
+def lead(role: str | None) -> str:
+    return f"{role}\n\n" if role else ""
+
+
+def decision_prompt(q: str, role: str | None = ROLE) -> str:
+    """Protocol 1 up to D: the role and Q, then the assistant turn with
+    thinking off. Its last token is where D is produced."""
+    return user_turn(lead(role) + q) + DECISION_OPEN
+
+
+def decision_skip(role: str | None = ROLE) -> str:
+    """The decision prompt's leading text up to Q, which read-outs skip."""
+    return USER_OPEN + lead(role)
 
 
 # Task prefixes before Q for the contrastive read-out (PLAN.md, M1). Each gives
@@ -35,15 +50,15 @@ READOUT_TASKS = {
         "You are an editor. Rewrite the following text in easy-to-read, plain "
         "English, keeping its meaning. Do not answer any question in it."
     ),
-    "decide": "You are an advisor. Decide the following question.",
+    "decide": ROLE,
 }
 
 
 def task_prompt(q: str, task: str) -> tuple[str, str]:
     """Protocol 1 up to D with a task from READOUT_TASKS before Q. Returns the
     prompt and its leading text up to Q, which read-outs skip."""
-    skip = f"{USER_OPEN}{READOUT_TASKS[task]}\n\n"
-    return decision_prompt(f"{READOUT_TASKS[task]}\n\n{q}"), skip
+    role = READOUT_TASKS[task]
+    return decision_prompt(q, role), decision_skip(role)
 
 
 def option_distribution(

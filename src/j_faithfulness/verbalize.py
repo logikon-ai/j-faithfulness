@@ -230,16 +230,30 @@ def verbalize(
 
 
 def subtract(j: J, baseline: J, k: int) -> J:
-    """J without any word that occurs anywhere in ``baseline`` (casefolded),
-    then up to ``k`` words per position; positions left without words are
-    omitted."""
+    """J without any word that occurs anywhere in ``baseline``, or a variant
+    of one (see :func:`echoes`: couple ← couples), then up to ``k`` words per
+    position; positions left without words are omitted."""
     seen = {w.casefold() for row in baseline for w in row.words}
     out = []
     for row in j:
-        kept = [w for w in row.words if w.casefold() not in seen][:k]
+        kept = [w for w in row.words if not echoes(w, seen)][:k]
         if kept:
             out.append(Row(row.position, kept))
     return out
+
+
+def verbalize_against(
+    readout: LatentReadout,
+    baseline: LatentReadout,
+    k: int = 10,
+    loose_k: int = 50,
+    loose_min_tf: float = 0.5,
+) -> J:
+    """J of ``readout`` minus every word of ``baseline``'s J (see
+    :func:`subtract`), both built loose (``loose_k`` words per position, TF ≥
+    ``loose_min_tf``), then up to ``k`` words per position."""
+    loose = {"k": loose_k, "min_tf": loose_min_tf}
+    return subtract(verbalize(readout, **loose), verbalize(baseline, **loose), k)
 
 
 # Left out when matching reference concepts against J ("respect for others").

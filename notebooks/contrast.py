@@ -110,7 +110,9 @@ def _(
             option_probs(hf_model, model.tokenizer, _prompt, _item.options)
         )
         readouts[_item.id] = {
-            "none": read_out(model, lens, _prompt, BAND, skip=USER_OPEN)
+            "none": read_out(
+                model, lens, decision_prompt(_item.q, None), BAND, skip=USER_OPEN
+            )
         }
         for _task in ["copy", "plain", "decide"]:
             _p, _skip = task_prompt(_item.q, _task)
@@ -143,19 +145,62 @@ def _(items, readouts, subtract, verbalize):
     }
 
     # The decide J minus every word of a baseline's J, both built loose
-    # (k = 50, TF ≥ 0.5); then the top 10 per position.
-    def _loose(readout):
-        return verbalize(readout, k=50, min_tf=0.5)
+    # (TF ≥ 0.5, k words per position: target k / baseline k); then the top 10
+    # per position.
+    def _loose(readout, k):
+        return verbalize(readout, k=k, min_tf=0.5)
 
-    for _b in ["copy", "plain"]:
-        VARIANTS[f"decide ∖ {_b}"] = ("decide", _b, "subtract")
-        js[f"decide ∖ {_b}"] = {
+    for _b, _kt, _kb, _v in [
+        ("copy", 50, 50, "decide ∖ copy"),
+        ("plain", 50, 50, "decide ∖ plain"),
+        ("copy", 100, 100, "decide ∖ copy · 100/100"),
+        ("copy", 100, 50, "decide ∖ copy · 100/50"),
+    ]:
+        VARIANTS[_v] = ("decide", _b, "subtract")
+        js[_v] = {
             i.id: subtract(
-                _loose(readouts[i.id]["decide"]), _loose(readouts[i.id][_b]), k=10
+                _loose(readouts[i.id]["decide"], _kt),
+                _loose(readouts[i.id][_b], _kb),
+                k=10,
             )
             for i in items
         }
     return VARIANTS, js
+
+
+@app.cell
+def _(items, readouts, verbalize):
+    # Is k binding? Per read-out: positions whose loose J (TF ≥ 0.5) has at
+    # least 50 or 100 words, out of all positions with words; and the size of
+    # the baseline's word set (the union over positions) at k = 50 and 100.
+    caps = {}
+    for _r in ["decide", "copy"]:
+        _rows = [
+            row
+            for i in items
+            for row in verbalize(readouts[i.id][_r], k=1000, min_tf=0.5)
+        ]
+        caps[_r] = {
+            "positions": len(_rows),
+            "≥ 50 words": sum(len(row.words) >= 50 for row in _rows),
+            "≥ 100 words": sum(len(row.words) >= 100 for row in _rows),
+        }
+    caps["copy word set, mean per item"] = {
+        f"k = {_k}": sum(
+            len(
+                {
+                    w.casefold()
+                    for row in verbalize(readouts[i.id]["copy"], k=_k, min_tf=0.5)
+                    for w in row.words
+                }
+            )
+            for i in items
+        )
+        / len(items)
+        for _k in [50, 100]
+    }
+    caps
+    return
 
 
 @app.cell
