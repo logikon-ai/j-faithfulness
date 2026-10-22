@@ -18,6 +18,8 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
+    from collections import Counter
+
     import marimo as mo
 
     from j_faithfulness.items import load_daily_dilemmas, split
@@ -34,6 +36,7 @@ def _():
 
     return (
         BAND,
+        Counter,
         READOUT_TASKS,
         USER_OPEN,
         decision,
@@ -144,62 +147,47 @@ def _(items, readouts, subtract, verbalize):
         for v, (r, b, measure) in VARIANTS.items()
     }
 
-    # The decide J minus every word of a baseline's J, both built loose
-    # (TF ≥ 0.5, k words per position: target k / baseline k); then the top 10
-    # per position.
-    def _loose(readout, k):
-        return verbalize(readout, k=k, min_tf=0.5)
+    # The decide J minus every word of a baseline's J, both built loose (k =
+    # 50 words per position, TF ≥ min_tf, TF × IDF ≥ min_score); then the top
+    # 10 per position. k isn't binding (no position reaches 50 words), the
+    # thresholds are: lowering them gives the subtraction more candidates.
+    SWEEP = {"": (0.5, 1.0), " · TF 0.25": (0.25, 0.5), " · TF 0.1": (0.1, 0.25)}
 
-    for _b, _kt, _kb, _v in [
-        ("copy", 50, 50, "decide ∖ copy"),
-        ("plain", 50, 50, "decide ∖ plain"),
-        ("copy", 100, 100, "decide ∖ copy · 100/100"),
-        ("copy", 100, 50, "decide ∖ copy · 100/50"),
+    def _loose(readout, min_tf, min_score):
+        return verbalize(readout, k=50, min_tf=min_tf, min_score=min_score)
+
+    for _b, _sfx in [("copy", ""), ("plain", "")] + [
+        ("copy", sfx) for sfx in SWEEP if sfx
     ]:
+        _v = f"decide ∖ {_b}{_sfx}"
         VARIANTS[_v] = ("decide", _b, "subtract")
         js[_v] = {
             i.id: subtract(
-                _loose(readouts[i.id]["decide"], _kt),
-                _loose(readouts[i.id][_b], _kb),
+                _loose(readouts[i.id]["decide"], *SWEEP[_sfx]),
+                _loose(readouts[i.id][_b], *SWEEP[_sfx]),
                 k=10,
             )
             for i in items
         }
-    return VARIANTS, js
+    return SWEEP, VARIANTS, js
 
 
 @app.cell
-def _(items, readouts, verbalize):
-    # Is k binding? Per read-out: positions whose loose J (TF ≥ 0.5) has at
-    # least 50 or 100 words, out of all positions with words; and the size of
-    # the baseline's word set (the union over positions) at k = 50 and 100.
-    caps = {}
-    for _r in ["decide", "copy"]:
-        _rows = [
-            row
-            for i in items
-            for row in verbalize(readouts[i.id][_r], k=1000, min_tf=0.5)
-        ]
-        caps[_r] = {
-            "positions": len(_rows),
-            "≥ 50 words": sum(len(row.words) >= 50 for row in _rows),
-            "≥ 100 words": sum(len(row.words) >= 100 for row in _rows),
-        }
-    caps["copy word set, mean per item"] = {
-        f"k = {_k}": sum(
-            len(
-                {
-                    w.casefold()
-                    for row in verbalize(readouts[i.id]["copy"], k=_k, min_tf=0.5)
-                    for w in row.words
-                }
+def _(Counter, SWEEP, js):
+    # Words per position in decide ∖ copy, per threshold setting: how many
+    # positions have 1, 2, … 10 words (10 = the cap), over all items.
+    {
+        f"TF ≥ {SWEEP[sfx][0]}": dict(
+            sorted(
+                Counter(
+                    len(row.words)
+                    for j in js[f"decide ∖ copy{sfx}"].values()
+                    for row in j
+                ).items()
             )
-            for i in items
         )
-        / len(items)
-        for _k in [50, 100]
+        for sfx in SWEEP
     }
-    caps
     return
 
 
