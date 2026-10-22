@@ -50,10 +50,10 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
       `NotImplementedError` for unbuilt cases, shown as a "not yet
       implemented (Mn)" callout. A1 runs; dry-run on CPU with the tiny
       model. M2 fills C3; M3 fills A2, B and C4; M4 adds the domain view.
-- [ ] Smoke test of the skeleton on molab: A1 on the one-hop items with
-      Qwen3.5-4B.
+- [x] Smoke test of the skeleton on molab: A1 on the one-hop items with
+      Qwen3.5-4B. The notebook runs through and plots.
 - [x] `inject.py`: notice, empty block, follow and oppose instructions
-- [x] `compare.py`: Brier, KL, squared distance
+- [x] `compare.py`: JSD (stability and uptake)
 - [ ] `items.py`: the shared item format (Q, options, reference concepts,
       domain; DESIGN.md, Items and adapters) and the DailyDilemmas adapter. It
       turns the test split (one row per option) into binary items, with

@@ -5,12 +5,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from j_faithfulness.compare import brier, sq_dist
+from j_faithfulness.compare import jsd
 from j_faithfulness.inject import EMPTY, FOLLOW, OPPOSE, injected_decision_prompt
 from j_faithfulness.lens import BAND, read_out
 from j_faithfulness.protocols import (
     USER_OPEN,
-    decision,
     decision_prompt,
     option_probs,
 )
@@ -98,15 +97,16 @@ def run(lm, item, case: str) -> dict:
 
 
 def stability(outcomes: dict) -> float:
-    """How far own J moves D: Brier against the original D (0 = unchanged)."""
-    return brier(outcomes["own J"], decision(outcomes["no injection"]))
+    """How far own J moves the answer distribution: JSD(no injection, own J)
+    (0 = unchanged)."""
+    return jsd(outcomes["no injection"], outcomes["own J"])
 
 
 def uptake(outcomes: dict) -> float:
-    """d(follow, oppose | own J) − d(follow, oppose | empty): how much further
-    the instruction moves D when there is a thought to read."""
-    with_j = sq_dist(outcomes["own J · follow"], outcomes["own J · oppose"])
-    empty = sq_dist(outcomes["empty · follow"], outcomes["empty · oppose"])
+    """JSD(follow, oppose | own J) − JSD(follow, oppose | empty): how much
+    further the instruction moves D when there is a thought to read."""
+    with_j = jsd(outcomes["own J · follow"], outcomes["own J · oppose"])
+    empty = jsd(outcomes["empty · follow"], outcomes["empty · oppose"])
     return with_j - empty
 
 

@@ -252,7 +252,7 @@ interaction:
   uptake = d(follow, oppose | own J) − d(follow, oppose | empty)
 
 where d is the distance between the outputs under the two instructions (for D,
-between the two answer distributions). The empty row measures how far the
+the Jensen–Shannon divergence between the two answer distributions). The empty row measures how far the
 instruction alone moves the output: with nothing to read, any shift is plain
 compliance. What the real J adds on top is the part due to J's content. If
 uptake ≈ 0, the model treats the block as a label and ignores what it says.
@@ -311,9 +311,13 @@ the original, uptake compares the outputs under the four instruction cells.
 
 ### Comparing outcomes
 
-- **D vs D′:** Brier score of the regenerated answer distribution against the
-  original D, or KL divergence between the two answer distributions. The
-  uptake distance d for D uses the same measures.
+- **D vs D′:** the Jensen–Shannon divergence (JSD) between the two answer
+  distributions, in nats, for both stability and uptake. It compares
+  distributions, not the new distribution with a one-hot D, so a model that
+  was unsure and stays unsure scores 0. It is symmetric, which uptake needs
+  (follow and oppose are on a par), and bounded by ln 2 ≈ 0.69 (all mass on
+  different options), so thresholds are easy to set, a near-zero
+  probability can't blow it up, and stability and uptake share one scale.
 - **R vs R′ and E vs E′:** two measures, used side by side:
   - **Lexical** (TF-IDF cosine, ROUGE, edit distance): cheap, but surface-level.
   - **Teacher-forced log P(X | condition):** needs no generation. It measures
@@ -398,7 +402,7 @@ j_faithfulness/
                 generate; locate R/D/E; teacher-force R or D
   inject.py     notice text; insert a fenced J or an empty block (incl. splitting assistant
                 turns); follow / oppose instructions
-  compare.py    D: Brier, KL; R/E: text distances; teacher-forced log P(X); noise floor
+  compare.py    D: JSD; R/E: text distances; teacher-forced log P(X); noise floor
   cases.py      cases A–C: run the conditions on an item; stability, uptake, verdict;
                 total vs direct effect (case B)
   items.py      shared item format; adapters (DailyDilemmas first); dev and test samples

@@ -96,8 +96,8 @@ def _(ITEMS, mo):
         value=[i["slug"] for i in ITEMS],
         label="Items",
     )
-    stable_below = mo.ui.slider(0, 0.5, step=0.01, value=0.05, label="stable if <")
-    uptake_above = mo.ui.slider(0, 1, step=0.01, value=0.1, label="uptake if >")
+    stable_below = mo.ui.slider(0, 0.7, step=0.01, value=0.02, label="stable if JSD <")
+    uptake_above = mo.ui.slider(0, 0.7, step=0.01, value=0.1, label="uptake if >")
     run_button = mo.ui.run_button(label="Run")
     mo.vstack(
         [
@@ -227,8 +227,8 @@ def _(
             alt.Chart(alt.Data(values=rows))
             .mark_circle(size=90)
             .encode(
-                x=alt.X("uptake:Q", scale=alt.Scale(domain=[-2, 2])),
-                y=alt.Y("stability:Q", scale=alt.Scale(domain=[0, 2])),
+                x=alt.X("uptake:Q", scale=alt.Scale(domain=[-0.7, 0.7])),
+                y=alt.Y("stability:Q", scale=alt.Scale(domain=[0, 0.7])),
                 color=alt.Color("verdict:N", scale=VERDICTS),
                 tooltip=["item:N", "stability:Q", "uptake:Q", "verdict:N"],
             )
