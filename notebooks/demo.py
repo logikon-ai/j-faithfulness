@@ -24,8 +24,8 @@ def _():
 
     from j_faithfulness.cases import (
         CASES,
-        CONDITIONS,
         instructed_prompts,
+        noise_floor,
         other_option,
         run,
         stability,
@@ -48,7 +48,6 @@ def _():
     return (
         BAND,
         CASES,
-        CONDITIONS,
         EMPTY,
         alt,
         control_block,
@@ -62,6 +61,7 @@ def _():
         load,
         load_daily_dilemmas,
         mo,
+        noise_floor,
         option_probs,
         other_option,
         read_out,
@@ -266,39 +266,53 @@ def _(CASES, chosen, lm, mo, run, run_button):
     mo.stop(not run_button.value, mo.md("_Press **Run** to score the items._"))
 
     # results[case][item id]: the outcome under each condition; None for a case
-    # that isn't built yet.
+    # that isn't built yet. traces[item id]: the sampled R′ per A2 condition.
     results = {}
+    traces = {i.id: {} for i in chosen}
     for _case in CASES:
         try:
-            results[_case] = {i.id: run(lm, i, _case) for i in chosen}
+            results[_case] = {i.id: run(lm, i, _case, traces[i.id]) for i in chosen}
         except NotImplementedError:
             results[_case] = None
-    return (results,)
+    return results, traces
 
 
 @app.cell
-def _(results, stability, stable_below, uptake, uptake_above, verdict):
+def _(
+    noise_floor,
+    results,
+    stability,
+    stable_below,
+    traces,
+    uptake,
+    uptake_above,
+    verdict,
+):
     scores = []
     for _case, _per_item in results.items():
         for _id, _outcomes in (_per_item or {}).items():
             _s, _u = stability(_outcomes), uptake(_outcomes)
-            scores.append(
-                {
-                    "case": _case,
-                    "item": _id,
-                    "stability": round(_s, 3),
-                    "uptake": round(_u, 3),
-                    "control": round(uptake(_outcomes, "control"), 3),
-                    "verdict": verdict(_s, _u, stable_below.value, uptake_above.value),
-                }
-            )
+            _row = {
+                "case": _case,
+                "item": _id,
+                "stability": round(_s, 3),
+                "uptake": round(_u, 3),
+            }
+            if _case == "A1":
+                _row["control"] = round(uptake(_outcomes, "control"), 3)
+            if _case == "A2":
+                _row["noise"] = round(noise_floor(_outcomes), 3)
+                _row["truncated"] = sum(
+                    t.truncated for ts in traces[_id].values() for t in ts
+                )
+            _row["verdict"] = verdict(_s, _u, stable_below.value, uptake_above.value)
+            scores.append(_row)
     return (scores,)
 
 
 @app.cell
 def _(
     CASES,
-    CONDITIONS,
     alt,
     decision,
     mo,
@@ -354,6 +368,7 @@ def _(
 
     def answer_chart(per_item):
         """P(original D) under each condition, one dot per item."""
+        conditions = list(next(iter(per_item.values())))
         points = [
             {
                 "item": item_id,
@@ -361,13 +376,13 @@ def _(
                 "P(D)": renormalize(outcomes[c])[decision(outcomes["no injection"])],
             }
             for item_id, outcomes in per_item.items()
-            for c in CONDITIONS
+            for c in conditions
         ]
         return mo.ui.altair_chart(
             alt.Chart(alt.Data(values=points))
             .mark_circle(size=80, opacity=0.7)
             .encode(
-                y=alt.Y("condition:N", sort=CONDITIONS, title=None),
+                y=alt.Y("condition:N", sort=conditions, title=None),
                 x=alt.X("P(D):Q", scale=alt.Scale(domain=[0, 1])),
                 tooltip=["item:N", "condition:N", "P(D):Q"],
             )
@@ -384,8 +399,8 @@ def _(answer_chart, mo, results, section):
 
 
 @app.cell
-def _(section):
-    section("A2")
+def _(answer_chart, mo, results, section):
+    mo.vstack([section("A2"), answer_chart(results["A2"])])
     return
 
 

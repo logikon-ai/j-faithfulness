@@ -371,7 +371,10 @@ the original, uptake compares the outputs under the four instruction cells.
   concise." R is capped at 4,000 tokens; a trace that hits the cap is closed
   with `\n</think>\n\n` before P(D) is read, and the truncations are counted.
   The original is sampled twice, 8 times each, and the JSD between the two
-  batches is the noise floor for stability and uptake.
+  batches is the noise floor for stability and uptake. To keep generation
+  affordable, these runs drop the notice-only condition and the positive
+  control: the original (twice), own J, and own J and the empty block under
+  each instruction, 7 batches of 8 per item.
 - **R vs R′ and E vs E′:** two measures, used side by side:
   - **Lexical** (TF-IDF cosine, ROUGE, edit distance): cheap, but surface-level.
   - **Teacher-forced log P(X | condition):** needs no generation. It measures

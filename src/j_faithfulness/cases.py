@@ -15,10 +15,13 @@ from j_faithfulness.inject import (
 )
 from j_faithfulness.lens import BAND, read_out
 from j_faithfulness.protocols import (
+    Trace,
+    batch_option_probs,
     decision,
     decision_prompt,
-    decision_skip,
+    mean_probs,
     option_probs,
+    sample_reasoning,
     task_prompt,
 )
 from j_faithfulness.verbalize import J, fence, verbalize_against
@@ -72,16 +75,36 @@ BLOCKS = ["own J", "empty", "control"]
 CONDITIONS = ["no injection", "notice only", "own J"] + [
     f"{block} · {i}" for block in BLOCKS for i in INSTRUCTIONS
 ]
+# A2 samples 8 R′ per condition, so it keeps only what stability and uptake
+# need, plus a second batch of the original for the noise floor.
+AGAIN = "no injection · again"
+A2_CONDITIONS = ["no injection", AGAIN, "own J"] + [
+    f"{block} · {i}" for block in ["own J", "empty"] for i in INSTRUCTIONS
+]
 
 
-def instructed_prompts(q: str, blocks: dict[str, str]) -> dict[str, str]:
+def instructed_prompts(
+    q: str, blocks: dict[str, str], thinking: bool = False
+) -> dict[str, str]:
     """``"{block} · {instruction}"`` → the decision prompt with that fenced
     block and instruction."""
     return {
-        f"{block} · {i}": injected_decision_prompt(q, fenced, text)
+        f"{block} · {i}": injected_decision_prompt(q, fenced, text, thinking=thinking)
         for block, fenced in blocks.items()
         for i, text in INSTRUCTIONS.items()
     }
+
+
+def a2_prompts(q: str, own_j: str) -> dict[str, str]:
+    """Protocol 2 up to R under each of the A2_CONDITIONS, for the fenced
+    ``own_j``."""
+    blocks = {"own J": own_j, "empty": EMPTY}
+    original = decision_prompt(q, thinking=True)
+    return {
+        "no injection": original,
+        AGAIN: original,
+        "own J": injected_decision_prompt(q, own_j, thinking=True),
+    } | instructed_prompts(q, blocks, thinking=True)
 
 
 def other_option(item, probs: dict) -> str:
@@ -89,19 +112,24 @@ def other_option(item, probs: dict) -> str:
     return next(o for o in item.options if o != decision(probs))
 
 
-def latent_thought(lm, item) -> J:
+def latent_thought(lm, item, thinking: bool = False) -> J:
     """J over Q and the generation prompt, i.e. right before D, minus the
-    words of the read-out of Q under the copy task."""
+    words of the read-out of Q under the copy task. ``thinking=True``: right
+    before R (protocol 2), both read-outs with thinking on."""
     _, model, lens = lm
-    readout = read_out(model, lens, decision_prompt(item.q), BAND, skip=decision_skip())
-    copy, skip = task_prompt(item.q, "copy")
+    prompt, skip = task_prompt(item.q, "decide", thinking)
+    readout = read_out(model, lens, prompt, BAND, skip=skip)
+    copy, skip = task_prompt(item.q, "copy", thinking)
     baseline = read_out(model, lens, copy, BAND, skip=skip)
     return verbalize_against(readout, baseline)
 
 
-def run(lm, item, case: str) -> dict:
-    """The outcome under each of the CONDITIONS: for A1, the answer
-    distribution."""
+def run(lm, item, case: str, traces: dict | None = None) -> dict:
+    """The outcome under each condition: for A1, the answer distribution; for
+    A2, P(D) averaged over 8 sampled R′. A ``traces`` dict is filled with the
+    R′ per condition (A2)."""
+    if case == "A2":
+        return _run_a2(lm, item, {} if traces is None else traces)
     if case != "A1":
         raise NotImplementedError(CASES[case].milestone)
     hf_model, model, _ = lm
@@ -122,6 +150,27 @@ def run(lm, item, case: str) -> dict:
     for c, p in instructed_prompts(q, blocks).items():
         out[c] = probs(p)
     return out
+
+
+def _run_a2(lm, item, traces: dict[str, list[Trace]]) -> dict:
+    # All conditions in one generation batch, 8 R′ each.
+    hf_model, model, _ = lm
+    prompts = a2_prompts(item.q, fence(latent_thought(lm, item, thinking=True)))
+    sampled = sample_reasoning(hf_model, model.tokenizer, list(prompts.values()))
+    out = {}
+    for c, ts in zip(prompts, sampled, strict=True):
+        traces[c] = ts
+        transcripts = [t.transcript for t in ts]
+        out[c] = mean_probs(
+            batch_option_probs(hf_model, model.tokenizer, transcripts, item.options)
+        )
+    return out
+
+
+def noise_floor(outcomes: dict) -> float:
+    """JSD between two batches of the original (A2): how far resampling R
+    alone moves P(D)."""
+    return jsd(outcomes["no injection"], outcomes[AGAIN])
 
 
 def stability(outcomes: dict) -> float:

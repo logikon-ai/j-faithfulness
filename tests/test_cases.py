@@ -2,7 +2,19 @@ import math
 
 import pytest
 
-from j_faithfulness.cases import CASES, run, stability, uptake, verdict
+from j_faithfulness.cases import (
+    A2_CONDITIONS,
+    AGAIN,
+    CASES,
+    a2_prompts,
+    noise_floor,
+    run,
+    stability,
+    uptake,
+    verdict,
+)
+from j_faithfulness.inject import EMPTY, FOLLOW, injected_decision_prompt
+from j_faithfulness.protocols import decision_prompt
 
 A, B, HALF = {"A": 1.0, "B": 0.0}, {"A": 0.0, "B": 1.0}, {"A": 0.5, "B": 0.5}
 LN2 = math.log(2)
@@ -46,6 +58,22 @@ def test_verdict():
 
 
 def test_unbuilt_cases_raise_with_their_milestone():
-    for case in set(CASES) - {"A1"}:
+    for case in set(CASES) - {"A1", "A2"}:
         with pytest.raises(NotImplementedError, match=CASES[case].milestone):
             run(None, {}, case)
+
+
+def test_a2_prompts():
+    prompts = a2_prompts("Q?", "<latentthought>\na.\n</latentthought>")
+    assert list(prompts) == A2_CONDITIONS
+    original = decision_prompt("Q?", thinking=True)
+    assert prompts["no injection"] == prompts[AGAIN] == original
+    assert prompts["empty · follow"] == injected_decision_prompt(
+        "Q?", EMPTY, FOLLOW, thinking=True
+    )
+    assert all(p.endswith("<think>\n") for p in prompts.values())
+
+
+def test_noise_floor():
+    assert noise_floor({"no injection": A, AGAIN: A}) == 0
+    assert noise_floor({"no injection": A, AGAIN: B}) == pytest.approx(LN2)

@@ -20,7 +20,9 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
   public; work stays on `dev`). torch is left out: molab's preinstalled CUDA
   build (torch 2.11, CUDA 13.0, `sm_120` kernels) supports the Blackwell GPU
   and survives the install. A running session needs a forced reinstall after
-  each push.
+  each push. The "causal-conv1d missing" warning is harmless: transformers
+  falls back to a width-4 depthwise `F.conv1d`, and the gated delta rule runs
+  on FLA's kernels.
 - **molab constraints:** sessions last at most 12 hours and shut down after 90
   minutes idle. Storage is temporary, so the model and lens are downloaded
   again each session. Notebooks are public (but not discoverable), so no
@@ -137,16 +139,22 @@ One generation per condition gives both R′ (case B) and D′ after it (case
 A2). Sampling as in DESIGN.md (Comparing outcomes, D after a sampled R):
 the model's defaults, "Keep your internal reasoning concise." in the role
 line, 8 R′ per condition, R capped at 4,000 tokens.
-- [ ] `protocols.py`: thinking on. The decision prompt up to `<think>\n`;
+- [x] `protocols.py`: thinking on. The decision prompt up to `<think>\n`;
       generate R up to `</think>` (batched, 8 samples), closing a trace that
       hits the cap; then P(D) after `</think>\n\n`. Locate R and D in the
-      transcript.
-- [ ] J before R: the read-out over the role, Q and the generation prompt up
-      to `<think>\n`, minus the copy baseline, as in A1.
-- [ ] `cases.py`, A2: per condition (the A1 conditions, positive control
-      included), P(D) averaged over 8 sampled R′; the noise floor from two
-      batches of 8 of the original; the number of truncated traces.
-      Stability and uptake as in A1.
+      transcript. (`decision_prompt(..., thinking=True)`, `sample_reasoning`
+      → `Trace`s, whose `transcript` ends where D is read; `mean_probs`.)
+- [x] J before R: the read-out over the role, Q and the generation prompt up
+      to `<think>\n`, minus the copy baseline, as in A1
+      (`latent_thought(..., thinking=True)`; the copy task gets the same
+      "Keep your internal reasoning concise.").
+- [x] `cases.py`, A2: per condition (the A1 conditions without notice only
+      and the positive control), P(D) averaged over 8 sampled R′; the noise
+      floor from two batches of 8 of the original; the number of truncated
+      traces. Stability and uptake as in A1. One `generate` call per item:
+      all 7 prompts × 8 samples, left-padded; P(D) in batches of 8, last
+      position only. The notebook's score table and
+      answer chart cover A2 (noise and truncated columns).
 - [ ] Total vs direct effect: teacher-force the original R under each
       condition; the shift in D there is the direct effect.
 - [ ] Notebook: the walkthrough with thinking on (R and R′ in accordions);
