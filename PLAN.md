@@ -73,15 +73,24 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
       annotated values (overlap with each option's values, and with D's)?
       Values that also occur in Q can't appear in J (context echo is
       dropped), so count them separately.
-- [ ] **Contrastive read-out.** The current J is only semi-useful. Read out Q
-      under three task prefixes placed *before* Q (causal attention: a task
-      after Q can't change the read-out at Q's positions): copy verbatim,
-      paraphrase, decide. Score words by the decide read-out against a
-      baseline (TF difference or log ratio, replacing or combining with
-      IDF). decide − paraphrase should leave what deciding adds; decide −
-      copy also keeps comprehension. Compare on the 10 dev items which J
-      surfaces more annotated values, and fewer topic and format words;
-      then rebuild `verbalize` around the better baseline.
+- [ ] **Contrastive read-out.** The current J is only semi-useful. Read out
+      Q under three task prefixes placed *before* Q (causal attention: a task
+      after Q can't change the read-out at Q's positions). Each gives the
+      model a role; the two baselines tell it not to answer, so it has no
+      reason to think the problem through:
+
+      | context | prefix before Q |
+      |---|---|
+      | copy | "You are a typist. Retype the following text exactly as it is. Do not answer or comment on any question in it." |
+      | plain English | "You are an editor. Rewrite the following text in easy-to-read, plain English, keeping its meaning. Do not answer any question in it." |
+      | decide | "You are an advisor. Decide the following question." |
+
+      Score words by the decide read-out against a baseline (TF difference
+      or log ratio, replacing or combining with IDF). decide − plain English
+      should leave what deciding adds (comprehension cancels); decide − copy
+      also keeps comprehension. Compare on the 10 dev items which J surfaces
+      more annotated values, and fewer topic and format words; then rebuild
+      `verbalize` around the better baseline.
 - [ ] **Checkpoint:** if J carries no value content with thinking off, the
       pilot moves to thinking on (protocol 2, J read out before R) and M3's
       protocol work comes first.
