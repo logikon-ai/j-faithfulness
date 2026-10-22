@@ -3,7 +3,7 @@
 Goal: a marimo notebook that imports `j_faithfulness` and runs the stability
 and uptake tests for cases A, B and C on a small set of forced-choice
 questions (everyday dilemmas from DailyDilemmas), as scoped in
-[DESIGN.md](DESIGN.md) (Test logic → Scope). M1 is the pilot.
+[DESIGN.md](DESIGN.md) (Test logic → Scope). M1 and M2 are the pilot.
 
 ## Where things run
 - **Locally (no GPU):** everything that doesn't need the model: `verbalize`,
@@ -36,7 +36,22 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
   `min_tf` 1.0, k 5, English words only): J surfaces 7 of 8 intermediates.
 - `protocols.py`: protocol 1 up to D; `option_probs`, `decision`.
 
-## M1. Pilot: case A in protocol 1
+## M1. Pilot, first round: case A in protocol 1 (done)
+
+Outcome, on 10 dev dilemmas with thinking off (DESIGN.md, Construct and Two
+tests):
+- J by TF × IDF over Q holds what reading Q evokes (topic and format words);
+  it hits about a fifth of the annotated values, with no lean toward D.
+- J = decide ∖ copy (the read-out under the advisor role minus every word of
+  the read-out under a copy task) leans toward D: 9 of 41 values of D's
+  option, 2 of 40 of the other's. The reasons sit at the option texts and the
+  last positions. Scoring position by position, or lowering the TF
+  threshold, loses the lean.
+- Uptake ≈ 0 on every item under four instruction wordings and both J's. The
+  positive control (a block naming an option) moves D on 9 of 10 items. The
+  instruction works; in one token, the model can't act on J's keyword rows.
+- Stability stays small (at most 0.09). Every item is uninformative.
+
 - [x] **Notebook skeleton** (`notebooks/demo.py`): every section of
       DESIGN.md (Scope) in place — selection with a run button and verdict
       thresholds, walkthrough on one item, A1, A2, B, C3, C4, summary
@@ -49,7 +64,7 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
       per condition, `stability`, `uptake`, `verdict`. `run` raises
       `NotImplementedError` for unbuilt cases, shown as a "not yet
       implemented (Mn)" callout. A1 runs; dry-run on CPU with the tiny
-      model. M2 fills C3; M3 fills A2, B and C4; M4 adds the domain view.
+      model. Later milestones fill the other cases.
 - [x] Smoke test of the skeleton on molab: A1 on the one-hop items with
       Qwen3.5-4B. The notebook runs through and plots.
 - [x] `inject.py`: notice, empty block, follow and oppose instructions
@@ -102,23 +117,50 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
       the decision prompt: uptake still ≈ 0 (at most 0.010). Stability rose a
       little (up to 0.065; one D flips under own J): the model reads J but
       ignores the instruction.
-- [ ] Rerun uptake with the instruction as an emphatic verdict before Q
+- [x] Rerun uptake with the instruction as an emphatic verdict before Q
       ("… found it sound / flawed. Do rely / Do NOT rely on it. …"), with the
-      positive control (a block arguing for the option D didn't pick). If the
-      control doesn't move D either, the instruction fails with thinking off.
+      positive control (a block arguing for the option D didn't pick): own J
+      within ±0.02 on all 10 items, the control 0.13–0.58 on 9.
 - [x] TF sweep in `contrast.py` (TF ≥ 0.5, 0.25, 0.1 on both sides): J grows
       (566 → 1042 → 1566 words) but the lean goes (D's values 9 → 4 → 5 of
       41, the other's 2 → 7 → 3 of 40). The extra words are associations
       spread over Q; the reasons stay in the option texts and the last
       positions. J keeps TF ≥ 0.5. Lowering it only at the final positions
       is the next lever, if J's content turns out to matter.
-- [ ] **Checkpoint:** if J carries no value content with thinking off, the
-      pilot moves to thinking on (protocol 2, J read out before R) and M3's
-      protocol work comes first.
-- [ ] Run stability and uptake on molab; read stability against uptake
-      (DESIGN.md, the reading table). Then confirm on the test items.
+- [x] **Checkpoint:** J carries some value content with thinking off, but the
+      model can't use it, so the gate can't pass. The pilot moves to thinking
+      on (protocol 2, J read out before R). A1 stays as it is, for
+      comparison.
 
-## M2. Case C (protocol 3)
+## M2. Pilot, second round: cases A2 and B in protocol 2
+One generation per condition gives both R′ (case B) and D′ after it (case
+A2). Sampling as in DESIGN.md (Comparing outcomes, D after a sampled R):
+the model's defaults, "Keep your internal reasoning concise." in the role
+line, 8 R′ per condition, R capped at 4,000 tokens.
+- [ ] `protocols.py`: thinking on. The decision prompt up to `<think>\n`;
+      generate R up to `</think>` (batched, 8 samples), closing a trace that
+      hits the cap; then P(D) after `</think>\n\n`. Locate R and D in the
+      transcript.
+- [ ] J before R: the read-out over the role, Q and the generation prompt up
+      to `<think>\n`, minus the copy baseline, as in A1.
+- [ ] `cases.py`, A2: per condition (the A1 conditions, positive control
+      included), P(D) averaged over 8 sampled R′; the noise floor from two
+      batches of 8 of the original; the number of truncated traces.
+      Stability and uptake as in A1.
+- [ ] Total vs direct effect: teacher-force the original R under each
+      condition; the shift in D there is the direct effect.
+- [ ] Notebook: the walkthrough with thinking on (R and R′ in accordions);
+      the A2 section.
+- [ ] Run on the 10 dev items; read stability against uptake (DESIGN.md, the
+      reading table).
+- [ ] **Checkpoint:** if own J's uptake stays ≈ 0 while the control works,
+      the gate itself needs rethinking (e.g. whether D moves toward or away
+      from J's lean; DESIGN.md, Two tests).
+- [ ] `compare.py`: R vs R′ (lexical; per-token teacher-forced log P); the
+      case B section.
+- [ ] Confirm on the test items.
+
+## M3. Case C (protocol 3)
 - [ ] `protocols.py`: explanation turn (thinking off); force the original D
 - [ ] `compare.py`: lexical distance for E vs E′ (TF-IDF cosine to start);
       teacher-forced log P(E | condition); noise floor from resampling the
@@ -128,19 +170,15 @@ questions (everyday dilemmas from DailyDilemmas), as scoped in
       separate the conditions on E, reconsider the fallback measures
       (embedding similarity, NLI, LLM judge)
 
-## M3. Case B (protocols 2 and 4)
-- [ ] `protocols.py`: thinking on; locate R and D; teacher-force R
-- [ ] `inject.py`: injection right before R; splitting an assistant turn with a
-      short user turn (also needed for case C in protocol 4)
-- [ ] `compare.py`: R vs R′ (lexical; per-token teacher-forced log P); total
-      vs direct effect on D
-- [ ] Notebook: case B section
+## M4. Protocol 4 (cases B and C4)
+- [ ] `inject.py`: splitting an assistant turn with a short user turn
+- [ ] Notebook: case B in protocol 4, case C4
 
-## M4. Domains
+## M5. Domains
 - [ ] Notebook summary: domains × subcases (share faithful, unfaithful,
       uninformative), first over DailyDilemmas' topic groups
 - [ ] A second adapter with items from another domain
 
-## M5. Docs
+## M6. Docs
 - [ ] README: what the method is, install, import from another repo, link to
       the notebook

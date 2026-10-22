@@ -42,25 +42,25 @@ CASES = {
     "A2": Case(
         "D with CoT (protocol 2)",
         f"{_INJECT}\nassistant  <think>R′</think> D        ← D vs D′, total vs direct",
-        "M3",
+        "M2",
     ),
     "B": Case(
         "R (protocols 2, 4)",
         f"{_INJECT}\nassistant  <think>R                   ← R vs R′",
-        "M3",
+        "M2",
     ),
     "C3": Case(
         "E without CoT (protocol 3)",
         f"{_INJECT}\nassistant  <think></think> D (forced)\n"
         "user       Explain.\nassistant  E                          ← E vs E′",
-        "M2",
+        "M3",
     ),
     "C4": Case(
         "E with CoT (protocol 4)",
         "user       notice · Q\nassistant  <think>R</think>\n"
         "user       ⟨J⟩ · [follow | oppose]\nassistant  D (forced)\n"
         "user       Explain.\nassistant  E                          ← E vs E′",
-        "M3",
+        "M4",
     ),
 }
 

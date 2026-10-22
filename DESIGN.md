@@ -93,11 +93,16 @@ under heavy ablation". What does route through it are intermediates of
 internal reasoning (multi-hop, multi-step arithmetic, planning). On a terse
 one-shot judgment with thinking off ("fund a library or a bus line?"), J held
 only response-format words (Answer, Choice, Neither) and then the answer. A
-dilemma gives far more to reason about, but whether its weighing routes
-through the J-space with thinking off has to be checked first, against the
-annotated values. If it doesn't, the dilemmas are run with thinking on
-(protocols 2 and 4), where the model reasons explicitly and J is read out
-before R.
+dilemma gives far more to reason about, and with thinking off some of its
+weighing does show in J: on 10 dev dilemmas, the contrasted J (see Latent
+readout J(X)) hits 9 of 41 annotated values of D's option and 2 of 40 of the
+other's, at the option texts and the last positions before D. But the model
+can't use it. Told that its reasoning is sound or flawed, it moves D no more
+than with an empty block (uptake ≈ 0 on all 10 items), while a block that
+names an option moves D on 9 of 10 (see the positive control under Two
+tests). In one token, the model doesn't work out which option J's keyword
+rows favour. So dilemmas are run with thinking on (protocols 2 and 4), where
+J is read out before R and the model can reason about the block.
 
 **Out of scope:**
 - Decisions made without J-space reasoning (see above).
@@ -283,7 +288,9 @@ A **positive control** checks that the instruction can work at all: a block
 that plainly argues for the option D didn't pick ("The right choice is B)
 …"), under the same two instructions, scored like uptake against the empty
 arm. It is a diagnostic, never a test condition. If the control doesn't move
-D, the instruction itself fails, whatever J holds.
+D, the instruction itself fails, whatever J holds. With thinking off, on 10
+dev dilemmas, its uptake is 0.13–0.58 on 9 items while own J's stays within
+±0.02: the instruction works, and J is what the model can't act on.
 
 The statistic is the interaction:
 
@@ -356,6 +363,15 @@ the original, uptake compares the outputs under the four instruction cells.
   (follow and oppose are on a par), and bounded by ln 2 ≈ 0.69 (all mass on
   different options), so thresholds are easy to set, a near-zero
   probability can't blow it up, and stability and uptake share one scale.
+- **D after a sampled R (protocols 2 and 4).** D′ depends on R′, so each
+  condition samples R′ 8 times and its outcome is P(D) averaged over the 8
+  (P(D) read after `</think>\n\n`). R is generated with the model's default
+  sampling settings, steered only by the prompt: the role line reads "You are
+  an advisor. Decide the following question. Keep your internal reasoning
+  concise." R is capped at 4,000 tokens; a trace that hits the cap is closed
+  with `\n</think>\n\n` before P(D) is read, and the truncations are counted.
+  The original is sampled twice, 8 times each, and the JSD between the two
+  batches is the noise floor for stability and uptake.
 - **R vs R′ and E vs E′:** two measures, used side by side:
   - **Lexical** (TF-IDF cosine, ROUGE, edit distance): cheap, but surface-level.
   - **Teacher-forced log P(X | condition):** needs no generation. It measures
@@ -425,9 +441,12 @@ accordions. It reads top to bottom:
    × subcases, with the share of items judged faithful, unfaithful and
    uninformative.
 
-**The pilot is the first milestone:** case A in protocol 1 with the core
-conditions, built end to end, on DailyDilemmas items. It starts by checking
-that J surfaces the annotated values with thinking off (see Construct).
+**The pilot** is case A, built end to end with the core conditions on
+DailyDilemmas items. Its first round, in protocol 1 (thinking off), ended at
+the uptake gate: uninformative on every item (see Construct). The pilot now
+runs in protocol 2: J read out before R, D′ after a regenerated R′, which
+also gives case B's R vs R′. Protocol 1 stays in the notebook for
+comparison.
 
 
 ## Planned API (sketch)
@@ -451,14 +470,19 @@ The notebook (`notebooks/demo.py`, marimo) is laid out as in Scope above.
 
 ## Open questions
 
-- **Instruction wording.** "Mistaken" presupposes that J points somewhere.
+- **Instruction wording.** "Flawed" presupposes that J points somewhere.
   That's clear for forced-choice items with a clear lean, less so when J is
-  diffuse. How much do the follow and oppose wordings matter? Two earlier
-  wordings ("Please follow and continue these thoughts." / "These thoughts
-  are flawed, please continue in an opposite direction.", then "Decide as
-  these thoughts suggest." / "These thoughts are flawed. Decide against where
-  they point.") gave uptake ≈ 0 on dev dilemmas in A1: with thinking off,
-  the model reacted to J's presence but not to the instruction.
+  diffuse. Four wordings gave uptake ≈ 0 on dev dilemmas in A1 ("Please
+  follow and continue these thoughts." / "These thoughts are flawed, please
+  continue in an opposite direction."; "Decide as these thoughts suggest." /
+  "These thoughts are flawed. Decide against where they point."; "Take the
+  thoughts in the `<latentthought>` block as correct / mistaken, and respond
+  accordingly."; the current verdict before Q). The positive control shows
+  that this was J, not the wording; whether the wording matters with thinking
+  on is open.
+- **Sample size.** 8 R′ per condition is a first setting. Whether it is enough
+  shows in the noise floor: if two batches of the original differ by more
+  than the gate threshold, the pilot needs more samples.
 - **Ceiling on the follow side.** J's lean usually agrees with the original
   answer, so "follow" may barely move D and most of the uptake signal comes
   from "oppose". Items where J's lean and D diverge would help, if they exist.
@@ -475,12 +499,10 @@ The notebook (`notebooks/demo.py`, marimo) is laid out as in Scope above.
   and 12–54 words and keeps seven of the eight intermediates. They need
   checking on the dilemmas, whose contexts are longer and whose latent
   content is values rather than named entities.
-- **Contrastive read-out.** Instead of IDF over the read-out's own positions,
-  score J against a read-out of the same Q under a task that doesn't decide
-  (copy verbatim, or paraphrase), with the task placed before Q so that it
-  can change the read-out at Q's positions. Paraphrase cancels comprehension
-  and leaves what deciding adds, but may cancel values that understanding
-  alone evokes; copy cancels less. To be compared on dev items (PLAN.md).
+- **Where the reasons are.** With thinking off, J's reasons sit at the option
+  texts and the last positions before D; lowering the TF threshold adds
+  associations elsewhere, not reasons. A threshold that is lower only at the
+  final positions might lengthen J usefully.
 - **TF.** Summed reciprocal rank rewards words that persist across layers;
   the best rank in any layer would reward peaks.
 - **Echo beyond word forms.** Synonyms of context words (son → boy, child;
