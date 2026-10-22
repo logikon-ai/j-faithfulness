@@ -13,8 +13,8 @@ NOTICE = (
 
 EMPTY = "<latentthought>\n</latentthought>"
 
-FOLLOW = "Please follow and continue these thoughts."
-OPPOSE = "These thoughts are flawed, please continue in an opposite direction."
+FOLLOW = "Decide as these thoughts suggest."
+OPPOSE = "These thoughts are flawed. Decide against where they point."
 
 
 def injected_decision_prompt(

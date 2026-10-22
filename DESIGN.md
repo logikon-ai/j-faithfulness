@@ -241,10 +241,10 @@ unstable is not.
 ignores the `<latentthought>` block also looks stable. The uptake test checks
 whether the model uses the block's content when told to. It's a 2 × 2:
 
-|                | follow                                     | oppose                                                       |
-|----------------|--------------------------------------------|--------------------------------------------------------------|
-| **own J**      | "Please follow and continue these thoughts." | "These thoughts are flawed, please continue in an opposite direction." |
-| **empty block**| same                                       | same                                                         |
+| | follow | oppose |
+|---|---|---|
+| **own J** | "Decide as these thoughts suggest." | "These thoughts are flawed. Decide against where they point." |
+| **empty block** | same | same |
 
 The empty block is `<latentthought>` with nothing inside. The statistic is the
 interaction:
@@ -413,9 +413,12 @@ The notebook (`notebooks/demo.py`, marimo) is laid out as in Scope above.
 
 ## Open questions
 
-- **Instruction wording.** "Opposite direction" presupposes that J points
-  somewhere. That's clear for forced-choice items with a clear lean, less so
-  when J is diffuse. How much do the follow and oppose wordings matter?
+- **Instruction wording.** "Decide against where they point" presupposes that
+  J points somewhere. That's clear for forced-choice items with a clear lean,
+  less so when J is diffuse. How much do the follow and oppose wordings
+  matter? A first wording ("Please follow and continue these thoughts." /
+  "These thoughts are flawed, please continue in an opposite direction.")
+  gave uptake ≈ 0 on ten dev dilemmas in A1.
 - **Ceiling on the follow side.** J's lean usually agrees with the original
   answer, so "follow" may barely move D and most of the uptake signal comes
   from "oppose". Items where J's lean and D diverge would help, if they exist.
