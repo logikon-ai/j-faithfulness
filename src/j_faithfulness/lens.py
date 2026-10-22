@@ -57,61 +57,6 @@ class LatentReadout:
     layers: list[int]
     top: list[list[list[str]]]
 
-    def in_band(self, lo: int, hi: int) -> LatentReadout:
-        """The same read-out restricted to layers ``lo`` to ``hi`` inclusive."""
-        keep = [j for j, layer in enumerate(self.layers) if lo <= layer <= hi]
-        return LatentReadout(
-            self.context,
-            self.context_tokens,
-            self.positions,
-            [self.layers[j] for j in keep],
-            [[ranked[j] for j in keep] for ranked in self.top],
-        )
-
-
-def readouts_to_json(
-    readouts: dict[str, LatentReadout], top_n: int | None = None
-) -> dict:
-    """Read-outs as JSON-ready data, for tuning J offline. Tokens are stored
-    once in a string table; ``top_n`` truncates each ranked list."""
-    table: dict[str, int] = {}
-
-    def index(s: str) -> int:
-        return table.setdefault(s, len(table))
-
-    out = {
-        name: {
-            "context": r.context,
-            "context_tokens": r.context_tokens,
-            "positions": r.positions,
-            "layers": r.layers,
-            "top": [
-                [[index(t) for t in ranked[:top_n]] for ranked in layers]
-                for layers in r.top
-            ],
-        }
-        for name, r in readouts.items()
-    }
-    return {"strings": list(table), "readouts": out}
-
-
-def readouts_from_json(data: dict) -> dict[str, LatentReadout]:
-    """Inverse of :func:`readouts_to_json`."""
-    strings = data["strings"]
-    return {
-        name: LatentReadout(
-            r["context"],
-            r["context_tokens"],
-            r["positions"],
-            r["layers"],
-            [
-                [[strings[i] for i in ranked] for ranked in layers]
-                for layers in r["top"]
-            ],
-        )
-        for name, r in data["readouts"].items()
-    }
-
 
 def word_ends(tokens: list[str]) -> list[int]:
     """Positions that end a word: every token except a subtoken followed by

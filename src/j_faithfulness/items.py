@@ -1,9 +1,8 @@
 """Built-in decision prompts: forced-choice questions with one hidden step.
 
 Each item has a known intermediate that is not in Q (DESIGN.md, Construct),
-and foils for it that imply the other answer: swapping avocado for chickpea
-makes hummus the dish to avoid. ``library-bus`` is a one-shot control
-without an intermediate.
+which validates the read-out. ``library-bus`` is a one-shot control without
+an intermediate.
 """
 
 from __future__ import annotations
@@ -17,7 +16,6 @@ ITEMS = [
         f"Should I bring A) guacamole or B) hummus to her party? {_AB}",
         "options": ["A", "B"],
         "intermediate": ["avocado"],
-        "foils": {"avocado": "chickpea"},
     },
     {
         "slug": "boot",
@@ -25,7 +23,6 @@ ITEMS = [
         f"currency? A) yes B) no. {_AB}",
         "options": ["A", "B"],
         "intermediate": ["Italy", "Italian", "Rome"],
-        "foils": {"Italy": "Norway", "Italian": "Norwegian", "Rome": "Oslo"},
     },
     {
         "slug": "eiffel",
@@ -33,14 +30,12 @@ ITEMS = [
         f"phrasebook should I pack: A) German or B) French? {_AB}",
         "options": ["A", "B"],
         "intermediate": ["Paris", "France"],
-        "foils": {"Paris": "Berlin", "France": "Germany"},
     },
     {
         "slug": "hamlet",
         "q": f"Was the author of Hamlet born before the year 1600? A) yes B) no. {_AB}",
         "options": ["A", "B"],
         "intermediate": ["Shakespeare"],
-        "foils": {"Shakespeare": "Tolkien"},
     },
     {
         "slug": "kangaroo",
@@ -48,7 +43,6 @@ ITEMS = [
         f"to A) Sydney or B) Nairobi? {_AB}",
         "options": ["A", "B"],
         "intermediate": ["Australia"],
-        "foils": {"Australia": "Kenya"},
     },
     {
         "slug": "honey",
@@ -57,21 +51,18 @@ ITEMS = [
         f"tour? {_AB}",
         "options": ["A", "B"],
         "intermediate": ["bee", "bees"],
-        "foils": {"bee": "butterfly", "bees": "butterflies"},
     },
     {
         "slug": "red-planet",
         "q": f"Is the Red Planet larger than Earth? A) yes B) no. {_AB}",
         "options": ["A", "B"],
         "intermediate": ["Mars"],
-        "foils": {"Mars": "Jupiter"},
     },
     {
         "slug": "ocean",
         "q": f"Does the largest ocean on Earth border Japan? A) yes B) no. {_AB}",
         "options": ["A", "B"],
         "intermediate": ["Pacific"],
-        "foils": {"Pacific": "Atlantic"},
     },
     {
         "slug": "library-bus",
@@ -79,6 +70,5 @@ ITEMS = [
         f"both. Which should it fund? A) library B) bus line. {_AB}",
         "options": ["A", "B"],
         "intermediate": [],
-        "foils": {},
     },
 ]

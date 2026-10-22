@@ -116,13 +116,6 @@ def test_verbalize_ranks_by_tf_idf_and_drops_generic_words():
     assert j == [Row(0, ["Italy"]), Row(1, ["euro"]), Row(2, ["Rome"])]
 
 
-def test_verbalize_latin_only_can_be_off():
-    j = verbalize(
-        generic_and_specific(), min_score=0.1, latin_only=False, min_zipf=None
-    )
-    assert j[-1] == Row(3, ["意大利"])
-
-
 def test_verbalize_min_tf_and_min_score():
     r = generic_and_specific()
     # Specific words: tf 1/2 + 1/2 = 1, idf log(7/1) ≈ 1.95.
@@ -131,7 +124,7 @@ def test_verbalize_min_tf_and_min_score():
     assert len(verbalize(r, min_score=1.9)) == 3
 
 
-def test_verbalize_drops_context_echo_and_drop_words():
+def test_verbalize_drops_context_echo():
     r = readout(
         [["Italy", "boots"]],
         [["euro"]],
@@ -143,12 +136,6 @@ def test_verbalize_drops_context_echo_and_drop_words():
         Row(0, ["Italy"]),
         Row(2, ["Portugal"]),
     ]
-    assert verbalize(r, min_tf=0.5, min_score=0.1, drop=["italy"]) == [
-        Row(2, ["Portugal"])
-    ]
-    kept = verbalize(r, min_tf=0.5, min_score=0.1, drop_context=False)
-    assert kept[0] == Row(0, ["Italy", "boots"])
-    assert Row(1, ["euro"]) in kept
 
 
 def test_words():

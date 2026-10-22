@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from j_faithfulness.inject import NOTICE, injected_decision_prompt
+from j_faithfulness.inject import EMPTY, NOTICE, OPPOSE, injected_decision_prompt
 from j_faithfulness.protocols import (
     decision,
     decision_prompt,
@@ -28,6 +28,9 @@ def test_injected_decision_prompt():
     )
     assert injected_decision_prompt("Q?") == f"<|im_start|>user\n{NOTICE}\n\nQ?" + tail
     assert injected_decision_prompt("Q?", notice=None) == decision_prompt("Q?")
+    assert injected_decision_prompt("Q?", EMPTY, OPPOSE) == (
+        f"<|im_start|>user\n{NOTICE}\n\nQ?\n\n{EMPTY}\n\n{OPPOSE}" + tail
+    )
 
 
 def test_option_distribution_is_not_renormalized():

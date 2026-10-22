@@ -479,7 +479,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "jlens" },
-    { name = "marimo" },
     { name = "torch" },
     { name = "transformers" },
     { name = "wordfreq" },
@@ -487,6 +486,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "marimo" },
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -494,7 +494,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jlens", git = "https://github.com/anthropics/jacobian-lens.git?rev=581d398613e5602a5af361e1c34d3a92ea82ba8e" },
-    { name = "marimo" },
     { name = "torch" },
     { name = "transformers", specifier = ">=5.5" },
     { name = "wordfreq", specifier = ">=3.1.1" },
@@ -502,6 +501,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "marimo" },
     { name = "pytest" },
     { name = "ruff" },
 ]

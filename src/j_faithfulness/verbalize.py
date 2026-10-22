@@ -12,8 +12,7 @@ import math
 import re
 import unicodedata
 from collections import Counter
-from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from wordfreq import zipf_frequency
 
@@ -29,12 +28,10 @@ ECHO_SUFFIXES = ("s", "es", "ed", "ing", "er", "ers")
 
 @dataclass
 class Row:
-    """The words of J at one context position, best first, with their
-    TF × IDF scores (salience for the edits in ablations.py)."""
+    """The words of J at one context position, best first."""
 
     position: int
     words: list[str]
-    scores: list[float] = field(default_factory=list, compare=False)
 
 
 J = list[Row]
@@ -63,7 +60,7 @@ def normalize(token: str) -> str:
 
 
 def words(text: str) -> set[str]:
-    """Casefolded words of ``text``, e.g. of the context for ``drop``."""
+    """Casefolded words of ``text``."""
     return {w.casefold() for w in re.findall(r"\w+(?:['’-]\w+)*", text)}
 
 
@@ -143,32 +140,22 @@ def verbalize(
     k: int = 5,
     min_tf: float = 1.0,
     min_score: float = 1.0,
-    min_zipf: float | None = 2.5,
-    drop: Iterable[str] = (),
-    drop_context: bool = True,
-    latin_only: bool = True,
+    min_zipf: float = 2.5,
 ) -> J:
     """J: per position, up to ``k`` words by TF × IDF, best first; positions
     left without words are omitted.
 
     A word needs TF ≥ ``min_tf`` (so rare garbage isn't boosted by its IDF)
     and TF × IDF ≥ ``min_score``. Left out are words of the context and their
-    variants (``drop_context``; at a word of Q the lens partly predicts Q's
-    next word), words in ``drop`` (compared casefolded), with ``latin_only``
-    words in other scripts (mostly translations of English ones), and with
-    ``min_zipf`` words that aren't English (see :func:`is_english`). The
-    defaults were tuned on the one-hop validation items (DESIGN.md).
+    variants (at a word of Q the lens partly predicts Q's next word), words in
+    other scripts (mostly translations of English ones), and words that aren't
+    English (see :func:`is_english`). The defaults were tuned on the one-hop
+    validation items (DESIGN.md).
     """
-    dropped = {w.casefold() for w in drop}
-    context_words = words(readout.context) if drop_context else set()
+    context_words = words(readout.context)
 
     def keep(w: str) -> bool:
-        return (
-            w.casefold() not in dropped
-            and not echoes(w, context_words)
-            and (is_latin(w) or not latin_only)
-            and (min_zipf is None or is_english(w, min_zipf))
-        )
+        return not echoes(w, context_words) and is_latin(w) and is_english(w, min_zipf)
 
     j = []
     for position, scored in zip(readout.positions, tf_idf(readout), strict=True):
@@ -181,8 +168,7 @@ def verbalize(
             key=lambda sw: -sw[0],
         )
         if ranked:
-            top = ranked[:k]
-            j.append(Row(position, [w for _, w in top], [sc for sc, _ in top]))
+            j.append(Row(position, [w for _, w in ranked[:k]]))
     return j
 
 

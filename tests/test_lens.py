@@ -2,10 +2,7 @@ import jlens
 import pytest
 
 from j_faithfulness.lens import (
-    LatentReadout,
     read_out,
-    readouts_from_json,
-    readouts_to_json,
     skipped_tokens,
     word_ends,
 )
@@ -65,24 +62,3 @@ def test_read_out_long_context_is_not_truncated(tiny):
     # The tiny tokenizer is byte-level: 600 chars is past jlens's default 512.
     r = read_out(model, lens, "a" * 599 + "b", band=(4, 4), positions=[-1], top_n=5)
     assert r.positions == [600]
-
-
-def test_in_band(tiny):
-    model, lens = tiny
-    r = read_out(model, lens, "ab cd", band=(0, 4), top_n=5)
-    b = r.in_band(1, 2)
-    assert b.layers == [1, 2]
-    assert b.top == [ranked[1:3] for ranked in r.top]
-    assert b.positions == r.positions
-
-
-def test_readouts_json_round_trip():
-    import json
-
-    r = LatentReadout(
-        "ctx", ["c", "tx"], [0, 1], [8, 9], [[["a", "b", "c"], ["b"]], [["c"], ["a"]]]
-    )
-    data = json.loads(json.dumps(readouts_to_json({"x": r})))
-    assert readouts_from_json(data) == {"x": r}
-    short = readouts_from_json(readouts_to_json({"x": r}, top_n=1))["x"]
-    assert short.top == [[["a"], ["b"]], [["c"], ["a"]]]

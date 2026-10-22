@@ -1,106 +1,99 @@
 # Plan: library + demo notebook
 
-Goal: a marimo notebook that imports `j_faithfulness` and demonstrates cases A,
-B and C on a small set of forced-choice questions, as scoped in
-[DESIGN.md](DESIGN.md) (Test logic → Scope). We build it in milestones; M1 is
-the pilot.
+Goal: a marimo notebook that imports `j_faithfulness` and runs the stability
+and uptake tests for cases A, B and C on a small set of forced-choice
+questions (everyday dilemmas from DailyDilemmas), as scoped in
+[DESIGN.md](DESIGN.md) (Test logic → Scope). M1 is the pilot.
 
 ## Where things run
 - **Locally (no GPU):** everything that doesn't need the model: `verbalize`,
-  `ablations`, `inject`, `protocols` (string building), `compare`. Tested
-  with mock `LatentReadout`s or a tiny model (jlens ships `tests/tiny.py`).
-- **[molab](https://marimo.io/blog/reintroducing-molab) (GPU):** smoke test,
-  inspecting J and choosing the band, running the notebook. While exploring,
-  GPU-dependent code is prototyped in notebook cells, then moved into the
-  package once it settles.
+  `inject`, `protocols` (string building), `compare`. Tested with mock
+  `LatentReadout`s or the tiny model in `tests/tiny.py` (vendored from
+  jlens, which doesn't ship its tests).
+- **[molab](https://marimo.io/blog/reintroducing-molab) (GPU):** running the
+  notebook. GPU-dependent code is prototyped in notebook cells, then moved
+  into the package once it settles.
+- **molab setup:** a notebook declares its dependencies as inline script
+  metadata, and molab installs them itself, including `jlens` from its git
+  URL and this package from
+  `git+https://github.com/logikon-ai/j-faithfulness.git@dev` (the repo is
+  public; work stays on `dev`). torch is left out: molab's preinstalled CUDA
+  build (torch 2.11, CUDA 13.0, `sm_120` kernels) supports the Blackwell GPU
+  and survives the install. A running session needs a forced reinstall after
+  each push.
 - **molab constraints:** sessions last at most 12 hours and shut down after 90
   minutes idle. Storage is temporary, so the model and lens are downloaded
   again each session. Notebooks are public (but not discoverable), so no
-  tokens or secrets go in them. Code moves from local to molab via push to
-  GitHub, then reinstall.
+  tokens or secrets go in them.
 
-## M0. Scaffolding
-- [x] `pyproject.toml` (src layout, uv). Dependencies: `jlens` from git,
-      `torch`, `transformers>=5.5`, `marimo`. Dev dependencies: `pytest`, `ruff`.
-- [x] `src/j_faithfulness/__init__.py`, `tests/`, `notebooks/`
-      (`tests/tiny.py` is vendored from jlens, which doesn't ship its tests)
-- [x] molab setup: find out how a notebook installs packages (probably inline
-      script metadata); install `jlens` and this repo from git (needs the repo
-      public, or auth); check that torch supports the Blackwell GPU.
-      `notebooks/smoke.py` declares its dependencies as inline script metadata
-      and leaves torch to molab's preinstalled CUDA build (torch 2.11, CUDA
-      13.0, with `sm_120` kernels: the Blackwell GPU works). molab installs
-      the metadata's dependencies itself, including `jlens` from its git URL,
-      and this package from
-      `git+https://github.com/logikon-ai/j-faithfulness.git@dev` (the repo is
-      public; work stays on `dev`). The preinstalled torch survives the
-      install. A session that's still running needs a forced reinstall after
-      each push.
-- [x] Smoke test on molab: load Qwen3.5-4B and its lens and reproduce the
-      jlens walkthrough readout. `notebooks/smoke.py`: at the "boot" token the
-      J-lens shows boots/heel at layer 8 and Italy at layer 16, where the
-      logit lens is still noise. First protocol-1 readout is under Band in
-      DESIGN.md.
-- [x] Check whether the Qwen3.5 chat template strips `<think>` content from
-      earlier turns; work out the raw-string format. It does; the format is
-      in DESIGN.md (Conversation protocols).
+## Done
+- Scaffolding: src layout, uv, ruff, pytest; molab setup and smoke test (the
+  jlens walkthrough read-out reproduced on Qwen3.5-4B).
+- Raw-string transcripts (the chat template strips `<think>` from earlier
+  turns; format in DESIGN.md, Conversation protocols).
+- `lens.py`: `load()`, `read_out()` over a span, word by word.
+- `verbalize.py`: J by TF × IDF, tuned on eight one-hop items (band 8–21,
+  `min_tf` 1.0, k 5, English words only): J surfaces 7 of 8 intermediates.
+- `protocols.py`: protocol 1 up to D; `option_probs`, `decision`.
 
 ## M1. Pilot: case A in protocol 1
-- [x] `lens.py`: `read_out(model, lens, context, band, positions=None)` →
-      `LatentReadout` (top tokens at every word of the span and every layer
-      of the band); `load()` for Qwen3.5-4B and its lens
-- [x] `verbalize.py`: TF × IDF over the read-out's ranked lists (IDF from
-      the other positions); word-like, Latin script, TF minimum, context echo
-      incl. prefix variants; `verbalize(readout, k=10)` → J (one row per
-      position); `fence(J)` → `<latentthought>` block
-- [x] First read-outs at the single token before D on five one-shot items
-      (`notebooks/band.py`, since replaced): J held only response format and
-      the answer. This led to the span read-out and to decision prompts with
-      a hidden step (DESIGN.md, Construct).
-- [x] Validate the read-out and fix the band and thresholds on eight one-hop
-      decision items with known intermediates plus one one-shot control
-      (`notebooks/readout.py`). J over the span surfaces 7 of 8
-      intermediates, J at the last token none. Tuned offline on the
-      downloaded read-outs (`notebooks/tune.py`): band 8–21, `min_tf` 1.0,
-      k 5, English words only; J has 12–54 words. IDF over a batch of
-      prompts didn't help.
-- [x] `protocols.py`: raw-string transcript for protocol 1 (thinking off);
-      forced-choice D (single token): `option_probs` (not renormalized, so
-      mass leaving the options shows), `decision`
-- [x] `inject.py`: notice text; insertion at the end of the user turn
-- [x] `ablations.py`: `swap(mapping)`, `swap_random` (the same foils in
-      place of random words), `drop_top(n)`, `drop_random(n)`,
-      `replace_top(n, foils)`, `truncate(s)`; salience is TF × IDF
-- [x] `compare.py`: Brier score of D′ against D; log P(D)
-- [x] `items.py`: the one-hop items, with foils that imply the other answer
-- [ ] Notebook v1 (`notebooks/demo.py`): Q → D → J → conditions (no J,
-      notice only, own J, intermediate → foil vs random word → foil, drop
-      top 3 vs drop random 3) → contrast table and plot. Written and
-      dry-run on CPU; not yet run on molab.
+- [x] **Notebook skeleton** (`notebooks/demo.py`): every section of
+      DESIGN.md (Scope) in place — selection with a run button and verdict
+      thresholds, walkthrough on one item, A1, A2, B, C3, C4, summary
+      heatmap. The walkthrough is plain code, one cell per step (item →
+      prompt → D → read-out and J → reference concepts in J → injected
+      prompt → D′), each showing its own output. The case sections share
+      helpers in one cell (`section`, `scatter`, `answer_chart`), so each case
+      cell is a single call. `cases.py` holds what the sections call: `CASES`
+      (title, transcript sketch, milestone), `run(lm, item, case)` → outcome
+      per condition, `stability`, `uptake`, `verdict`. `run` raises
+      `NotImplementedError` for unbuilt cases, shown as a "not yet
+      implemented (Mn)" callout. A1 runs; dry-run on CPU with the tiny
+      model. M2 fills C3; M3 fills A2, B and C4; M4 adds the domain view.
+- [ ] Smoke test of the skeleton on molab: A1 on the one-hop items with
+      Qwen3.5-4B.
+- [x] `inject.py`: notice, empty block, follow and oppose instructions
+- [x] `compare.py`: Brier, KL, squared distance
+- [ ] `items.py`: the shared item format (Q, options, reference concepts,
+      domain; DESIGN.md, Items and adapters) and the DailyDilemmas adapter. It
+      turns the test split (one row per option) into binary items, with
+      `topic_group` as the domain: Q = the dilemma situation, A = to do,
+      B = not to do, each with its action and values. Fixed, disjoint dev and
+      test samples (seeded); start small (about 10 dev items). The one-hop
+      items go, and the walkthrough reads the reference concepts instead of
+      `intermediate`.
+- [ ] Walkthrough section: read-out check on the dev items with thinking
+      off. Does J surface the annotated values (overlap with each option's
+      values, and with D's)? Revisit band and thresholds if needed.
+- [ ] **Checkpoint:** if J carries no value content with thinking off, the
+      pilot moves to thinking on (protocol 2, J read out before R) and M3's
+      protocol work comes first.
+- [ ] Run stability and uptake on molab; read stability against uptake
+      (DESIGN.md, the reading table). Then confirm on the test items.
 
-## M2. Case C (protocol 3), with agreement with A
+## M2. Case C (protocol 3)
 - [ ] `protocols.py`: explanation turn (thinking off); force the original D
-- [ ] `compare.py`: text distances for E vs E′ (start with one or two of the
-      options); noise floor from resampling under own J
-- [ ] Single-item edits; rank agreement between the D shift and the E distance
-- [ ] Notebook: case C section
+- [ ] `compare.py`: lexical distance for E vs E′ (TF-IDF cosine to start);
+      teacher-forced log P(E | condition); noise floor from resampling the
+      original
+- [ ] Notebook: case C section, stability and uptake on E
+- [ ] **Checkpoint:** if lexical distance and teacher-forced log P don't
+      separate the conditions on E, reconsider the fallback measures
+      (embedding similarity, NLI, LLM judge)
 
 ## M3. Case B (protocols 2 and 4)
 - [ ] `protocols.py`: thinking on; locate R and D; teacher-force R
 - [ ] `inject.py`: injection right before R; splitting an assistant turn with a
       short user turn (also needed for case C in protocol 4)
-- [ ] `compare.py`: R vs R′ (text distances; per-token teacher-forced log P);
-      total vs direct effect on D
+- [ ] `compare.py`: R vs R′ (lexical; per-token teacher-forced log P); total
+      vs direct effect on D
 - [ ] Notebook: case B section
 
-## M4. Full notebook
-- [ ] Opposite-answer J as the positive control in every case
-- [ ] `ablations.py`: foreign J, same-answer/different-reasons J, mix
-      (dose-response), shuffles (within and across rows), framing variants
-- [ ] Notebook: one section showing the rest of the ladder once
-- [ ] Polish: narrative markdown cells, consistent plots
+## M4. Domains
+- [ ] Notebook summary: domains × subcases (share faithful, unfaithful,
+      uninformative), first over DailyDilemmas' topic groups
+- [ ] A second adapter with items from another domain
 
 ## M5. Docs
 - [ ] README: what the method is, install, import from another repo, link to
       the notebook
-- [ ] CLAUDE.md: points to DESIGN.md and PLAN.md; conventions
