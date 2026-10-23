@@ -267,22 +267,26 @@ def _(hf_model, mo, tokenizer, torch, transformers):
         return out
 
     @torch.no_grad()
-    def option_probs(prompts, options, batch_size):
+    def option_probs(prompts, options, title, batch_size):
         """P(D = o) after each prompt, for each of its single-token options o
         (``options[k]`` belongs to ``prompts[k]``)."""
         out = []
-        for i in range(0, len(prompts), batch_size):
-            enc = left_padded(prompts[i : i + batch_size])
-            # No KV cache: D is one forward pass, and the cache of 16 rows that
-            # hold R would take ~9 GB.
-            logits = hf_model(**enc, logits_to_keep=1, use_cache=False).logits[:, -1]
-            for p, opts in zip(
-                torch.softmax(logits.float(), -1),
-                options[i : i + batch_size],
-                strict=True,
-            ):
-                ids = tokenizer.convert_tokens_to_ids(opts)
-                out.append(dict(zip(opts, p[ids].tolist(), strict=True)))
+        starts = range(0, len(prompts), batch_size)
+        with mo.status.progress_bar(total=len(prompts), title=title) as bar:
+            for b, i in enumerate(starts, 1):
+                bar.update(increment=0, subtitle=f"batch {b} of {len(starts)}")
+                enc = left_padded(prompts[i : i + batch_size])
+                # No KV cache: D is one forward pass, and the cache of 16 rows
+                # that hold R would take ~9 GB.
+                logits = hf_model(**enc, logits_to_keep=1, use_cache=False).logits
+                for p, opts in zip(
+                    torch.softmax(logits[:, -1].float(), -1),
+                    options[i : i + batch_size],
+                    strict=True,
+                ):
+                    ids = tokenizer.convert_tokens_to_ids(opts)
+                    out.append(dict(zip(opts, p[ids].tolist(), strict=True)))
+                bar.update(increment=enc.input_ids.shape[0])
         return out
 
     return (
@@ -360,18 +364,21 @@ def _(
     transcript_format,
 ):
     # D needs no sampling: the most likely option letter.
-    def decide(prompts, batch_size):
-        probs = option_probs(prompts, [i.options for i in items], batch_size)
+    def decide(prompts, title, batch_size):
+        probs = option_probs(prompts, [i.options for i in items], title, batch_size)
         return [(max(p, key=p.get), p) for p in probs]
 
     decisions_3 = decide(
-        [transcript_format.decision_prompt(i.q) for i in items], BATCH_SIZE
+        [transcript_format.decision_prompt(i.q) for i in items],
+        "D, protocol 3",
+        BATCH_SIZE,
     )
     decisions_4 = decide(
         [
             transcript_format.decision_prompt(i.q, r, capped)
             for i, (r, capped) in zip(items, reasonings, strict=True)
         ],
+        "D, protocol 4",
         R_PROMPT_BATCH_SIZE,
     )
     [
