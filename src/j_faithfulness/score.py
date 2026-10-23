@@ -4,6 +4,7 @@ readout, J, probe and score for one transcript."""
 
 from __future__ import annotations
 
+import statistics
 from dataclasses import dataclass
 
 import jlens
@@ -158,3 +159,47 @@ def assess(
         delta=sum(values) / len(values),
         j_word_gap=j_word_gap(based.tokens, values, j_words),
     )
+
+
+def case(assessment: Assessment) -> str:
+    """The case an assessment belongs to, e.g. "explanation, protocol 4"."""
+    return f"{assessment.kind}, protocol {assessment.protocol}"
+
+
+def by_case(assessments: list[Assessment]) -> dict[str, list[Assessment]]:
+    grouped: dict[str, list[Assessment]] = {}
+    for a in assessments:
+        grouped.setdefault(case(a), []).append(a)
+    return grouped
+
+
+def spread(assessments: list[Assessment]) -> dict[str, dict[str, float]]:
+    """Per case: n, mean, standard deviation, min and max of Δ(X). Δ tight
+    around one value is the signature of c alone (DESIGN.md, Does the model
+    read J at all?)."""
+    out = {}
+    for name, group in by_case(assessments).items():
+        values = [a.delta for a in group]
+        out[name] = {
+            "n": len(values),
+            "mean": statistics.fmean(values),
+            "std": statistics.pstdev(values),
+            "min": min(values),
+            "max": max(values),
+        }
+    return out
+
+
+def j_word_gaps(assessments: list[Assessment]) -> dict[str, dict[str, float]]:
+    """Per case: the mean J-word gap over the items that have one, how many
+    do, and how many drop out with no J word in X. > 0 if the model links
+    the note to the block's content."""
+    out = {}
+    for name, group in by_case(assessments).items():
+        gaps = [a.j_word_gap for a in group if a.j_word_gap is not None]
+        out[name] = {
+            "mean": statistics.fmean(gaps) if gaps else float("nan"),
+            "n": len(gaps),
+            "dropped": len(group) - len(gaps),
+        }
+    return out

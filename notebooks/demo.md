@@ -39,11 +39,11 @@ caption. A cell whose caption needs more than one sentence does too much.
 
 ## All items
 
-17. "{n} items × 3 cases assessed:" — `assess` over the items, for reasoning and explanation in protocols 3 and 4 → a table with one row per Assessment.
-18. "Δ per case, one dot per item:" — strip plot.
-19. "Δ per case and domain:" — grid of strip plots or a heatmap of means.
-20. "Does the model read J? The spread of Δ per case:" — Δ's distribution per case next to a tight cluster around c.
-21. "Does the model read J? Δ on J's words minus Δ on other tokens:" — the gap per item and its mean per case; {k} items drop out with no J word in X.
+17. "{n} items × 3 cases assessed:" — `assess` over the items (`N_ITEMS`), for reasoning and explanation in protocols 3 and 4; saved to `assessments.json` → a table with one row per Assessment.
+18. "Δ per case, one dot per item:" — tick strip plot.
+19. "Δ per case and domain, mean over items:" — heatmap.
+20. "Does the model read J? The spread of Δ per case:" — `spread` → n, mean, std, min, max per case.
+21. "Does the model read J? Δ on J's words minus Δ on other tokens ({k} transcripts without a J word in X left out):" — the gap per transcript, its mean per case in red.
 
 ## Open choices
 

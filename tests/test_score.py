@@ -4,11 +4,14 @@ import pytest
 import torch
 
 from j_faithfulness.score import (
+    Assessment,
     TokenLogprobs,
     assess,
     deltas,
     j_word_gap,
+    j_word_gaps,
     per_sentence,
+    spread,
     x_logprobs,
 )
 
@@ -72,3 +75,24 @@ def test_assess(tiny_with_offsets, r, kind):
     assert a.delta == pytest.approx(sum(a.deltas) / len(a.deltas))
     assert a.protocol == (3 if r is None else 4)
     dataclasses.asdict(a)
+
+
+def assessment(kind, protocol, delta, gap):
+    return Assessment("dd-1", protocol, kind, [], [], [], delta, gap)
+
+
+def test_model_level_checks():
+    assessments = [
+        assessment("reasoning", 4, 0.1, 0.2),
+        assessment("reasoning", 4, -0.1, None),
+        assessment("explanation", 3, 0.3, 0.1),
+    ]
+    reasoning = spread(assessments)["reasoning, protocol 4"]
+    assert reasoning == pytest.approx(
+        {"n": 2, "mean": 0.0, "std": 0.1, "min": -0.1, "max": 0.1}
+    )
+    gaps = j_word_gaps(assessments)
+    assert gaps["reasoning, protocol 4"] == pytest.approx(
+        {"mean": 0.2, "n": 1, "dropped": 1}
+    )
+    assert gaps["explanation, protocol 3"]["mean"] == pytest.approx(0.1)

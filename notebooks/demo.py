@@ -20,8 +20,12 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
+    import dataclasses
+    import json
+
     import altair as alt
     import datasets
+    import marimo as mo
     import pandas as pd
     import transformers
 
@@ -29,7 +33,15 @@ def _():
     from j_faithfulness.items import row_transcript
     from j_faithfulness.lens import BAND, LENS_FILE, load, read_span
     from j_faithfulness.probe import probe
-    from j_faithfulness.score import assess, deltas, per_sentence, x_logprobs
+    from j_faithfulness.score import (
+        assess,
+        case,
+        deltas,
+        j_word_gaps,
+        per_sentence,
+        spread,
+        x_logprobs,
+    )
     from j_faithfulness.verbalize import document, fence, verbalize_against
 
     return (
@@ -38,16 +50,22 @@ def _():
         LENS_FILE,
         alt,
         assess,
+        case,
+        dataclasses,
         datasets,
         deltas,
         document,
         fence,
+        j_word_gaps,
+        json,
         load,
+        mo,
         pd,
         per_sentence,
         probe,
         read_span,
         row_transcript,
+        spread,
         transformers,
         verbalize_against,
         x_logprobs,
@@ -394,6 +412,108 @@ def _(assess, lens, model, record, records):
         f"\nΔ(E) = {assessment.delta:+.3f}, J-word gap = {gap:+.3f}"
         if gap is not None
         else f"\nΔ(E) = {assessment.delta:+.3f}, no J word in E"
+    )
+    return
+
+
+@app.cell
+def _(MODEL_ID, assess, case, dataclasses, json, lens, mo, model, pd, records):
+    N_ITEMS = 100
+
+    rows = [row for row in records if row["metadata"]["model_id"] == MODEL_ID]
+    item_ids = list(dict.fromkeys(row["id"] for row in rows))[:N_ITEMS]
+    cases = [
+        (row, kind)
+        for row in rows
+        if row["id"] in item_ids
+        for kind in (("reasoning", "explanation") if row["r"] else ("explanation",))
+    ]
+    assessments = []
+    with mo.status.progress_bar(total=len(cases), title="Assess") as bar:
+        for row, kind in cases:
+            protocol = 4 if row["r"] else 3
+            bar.update(
+                increment=0, subtitle=f"{row['id']}: {kind}, protocol {protocol}"
+            )
+            assessments.append(assess(model, lens, row, kind))
+            bar.update()
+    # Saved so the plots below can be redrawn without the GPU.
+    with open("assessments.json", "w") as f:
+        json.dump([dataclasses.asdict(a) for a in assessments], f)
+
+    domains = {row["id"]: row["domain"] for row in rows}
+    results = pd.DataFrame(
+        [
+            {
+                "id": a.id,
+                "domain": domains[a.id],
+                "case": case(a),
+                "delta": a.delta,
+                "j_word_gap": a.j_word_gap,
+            }
+            for a in assessments
+        ]
+    )
+
+    mo.ui.table(results, label=f"{len(item_ids)} items × 3 cases assessed:")
+    return assessments, results
+
+
+@app.cell
+def _(alt, results):
+    (
+        alt.Chart(results, title="Δ per case, one dot per item:")
+        .mark_tick()
+        .encode(
+            x=alt.X("delta:Q", title="Δ (nats per token)"),
+            y=alt.Y("case:N", title=None),
+            tooltip=["id", "domain", "delta"],
+        )
+    )
+    return
+
+
+@app.cell
+def _(alt, results):
+    reach = results.groupby(["case", "domain"]).delta.mean().abs().max()
+    (
+        alt.Chart(results, title="Δ per case and domain, mean over items:")
+        .mark_rect()
+        .encode(
+            x=alt.X("case:N", title=None),
+            y=alt.Y("domain:N", title=None),
+            color=alt.Color(
+                "mean(delta):Q",
+                scale=alt.Scale(scheme="redblue", domain=[-reach, reach]),
+                title="Δ",
+            ),
+            tooltip=["count()", "mean(delta)"],
+        )
+    )
+    return
+
+
+@app.cell
+def _(assessments, mo, pd, spread):
+    mo.ui.table(
+        pd.DataFrame(spread(assessments)).T.reset_index(names="case"),
+        label="Does the model read J? The spread of Δ per case:",
+    )
+    return
+
+
+@app.cell
+def _(alt, assessments, j_word_gaps, results):
+    dropped = sum(g["dropped"] for g in j_word_gaps(assessments).values())
+    gaps = alt.Chart(
+        results.dropna(subset=["j_word_gap"]),
+        title=(
+            "Does the model read J? Δ on J's words minus Δ on other tokens "
+            f"({dropped} transcripts without a J word in X left out):"
+        ),
+    ).encode(x=alt.X("j_word_gap:Q", title="J-word gap"), y=alt.Y("case:N", title=None))
+    gaps.mark_tick(opacity=0.5) + gaps.mark_tick(color="crimson", thickness=3).encode(
+        x="mean(j_word_gap):Q"
     )
     return
 
