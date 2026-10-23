@@ -153,12 +153,19 @@ def _(HfApi, config, hf_token, torch, transformers):
 
 
 @app.cell
-def _(hf_model):
-    # R and E are sampled with the model's defaults; these are recorded per row.
-    sampling = {
-        k: getattr(hf_model.generation_config, k, None)
-        for k in ("do_sample", "temperature", "top_p", "top_k", "min_p")
+def _(config):
+    # The model card's settings, by model id: thinking mode for R, non-thinking
+    # mode for E, which follows an empty think block. The repo ships no
+    # generation_config.json, so transformers' generic defaults would apply
+    # otherwise. HF generate has no presence_penalty (the card: 1.5 for both).
+    SAMPLING = {
+        "Qwen/Qwen3.5-4B": {
+            "r": {"temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.0},
+            "e": {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "min_p": 0.0},
+        }
     }
+    # Recorded in each row's metadata.
+    sampling = SAMPLING[config["model_id"]]
     sampling
     return (sampling,)
 
@@ -173,6 +180,9 @@ def _(hf_model, mo, tokenizer, torch, transformers):
     think_end = tokenizer.convert_tokens_to_ids("</think>")
     eos = hf_model.generation_config.eos_token_id
     eos = [eos] if isinstance(eos, int) else list(eos)
+    # Qwen3.5's config names only <|endoftext|>; a turn ends at <|im_end|>, the
+    # tokenizer's EOS. Without it, E would run on past the end of its turn.
+    eos = list(dict.fromkeys([tokenizer.eos_token_id, *eos]))
 
     def left_padded(prompts):
         """One batch padded on the left, so each row continues exactly where
@@ -209,9 +219,10 @@ def _(hf_model, mo, tokenizer, torch, transformers):
             self.reported = finished
 
     @torch.no_grad()
-    def sample(prompts, stops, max_new_tokens, title):
-        """A sampled continuation of each prompt, cut before its first stop
-        token, with the stop token it ended at (None: it hit the cap)."""
+    def sample(prompts, stops, max_new_tokens, settings, title):
+        """A continuation of each prompt, sampled with ``settings``, cut before
+        its first stop token, with the stop token it ended at (None: it hit the
+        cap)."""
         out = []
         starts = range(0, len(prompts), BATCH_SIZE)
         with mo.status.progress_bar(total=len(prompts), title=title) as bar:
@@ -227,6 +238,7 @@ def _(hf_model, mo, tokenizer, torch, transformers):
                 ids = hf_model.generate(
                     **enc,
                     do_sample=True,
+                    **settings,
                     max_new_tokens=max_new_tokens,
                     eos_token_id=stops,
                     pad_token_id=tokenizer.pad_token_id,
@@ -261,12 +273,22 @@ def _(hf_model, mo, tokenizer, torch, transformers):
 
 
 @app.cell
-def _(config, items, sample, think_end, eos, transformers, transcript_format):
+def _(
+    config,
+    eos,
+    items,
+    sample,
+    sampling,
+    think_end,
+    transcript_format,
+    transformers,
+):
     transformers.set_seed(config["seed"])
     r_generated = sample(
         [transcript_format.reasoning_prompt(i.q) for i in items],
         [think_end, *eos],
         config["r_cap"],
+        sampling["r"],
         "R",
     )
     # An R that didn't reach </think> is closed with "..." (DESIGN.md, Generation
@@ -309,6 +331,7 @@ def _(
     items,
     reasonings,
     sample,
+    sampling,
     transcript_format,
 ):
     explanations_3 = sample(
@@ -318,6 +341,7 @@ def _(
         ],
         eos,
         E_CAP,
+        sampling["e"],
         "E, protocol 3",
     )
     explanations_4 = sample(
@@ -329,6 +353,7 @@ def _(
         ],
         eos,
         E_CAP,
+        sampling["e"],
         "E, protocol 4",
     )
     {

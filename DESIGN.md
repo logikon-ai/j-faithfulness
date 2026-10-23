@@ -111,12 +111,19 @@ lives in this script; the library never generates. It uses batched HF
 generation in bf16, the same stack the readout and scoring use. Prompts are
 left-padded so each continues exactly where the raw string ends. It runs in
 three batched passes over the items:
-1. **R** in protocol 4, sampled with the model's default settings and capped
-   at 8,000 tokens. An R that hits the cap is closed with
+1. **R** in protocol 4, sampled with the model card's thinking-mode
+   settings and capped at 8,000 tokens. An R that hits the cap is closed with
    `...\n</think>\n\n`. The `...` counts as part of R and is scored with it.
 2. **D** in both protocols: the most likely option letter after
    `</think>\n\n`.
-3. **E** in both protocols, sampled.
+3. **E** in both protocols, sampled with the model card's non-thinking
+   settings, since E follows an empty think block.
+
+For Qwen3.5-4B, the card gives temperature 1.0, top-p 0.95, top-k 20 for
+thinking and 0.7, 0.8, 20 for non-thinking, min-p 0 and presence penalty
+1.5 for both. HF generation has no presence penalty, so it is left out. The
+repo ships no generation config, so without these settings transformers'
+generic defaults would apply.
 
 Settings, with defaults: model id (`Qwen/Qwen3.5-4B`), number of items (50),
 dataset repo id (no default), HF token (a password field, falling back to
@@ -139,7 +146,7 @@ the format's name no longer matches the row's. The fields:
   is the text between the think tags, cap mark included, as the model saw
   it; it is null in protocol 3, which tells the protocols apart.
 - **`metadata`**, one dict: `model_id`, `model_revision` (the commit
-  loaded), `format` (its name), `sampling` (the model's default settings),
+  loaded), `format` (its name), `sampling` (the settings for R and for E),
   `seed`, `r_cap`, `e_cap` (2,000 tokens, a guard against a runaway E),
   `r_capped` (null in protocol 3) and `e_capped`.
 

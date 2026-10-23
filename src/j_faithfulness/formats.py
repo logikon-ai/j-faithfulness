@@ -109,8 +109,7 @@ class Qwen35Format:
     name = "qwen3.5/1"
 
     ROLE = "You are an advisor. Decide the following question."
-    # With thinking on, the role line also asks for a concise R; R is sampled
-    # with the model's default settings.
+    # With thinking on, the role line also asks for a concise R.
     CONCISE = "Keep your internal reasoning concise."
     # The copy baseline (DESIGN.md, Latent readout, Keyword rows, step 4): the
     # same transcript under a role that has no reason to think the problem
