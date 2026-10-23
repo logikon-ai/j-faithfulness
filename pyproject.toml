@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "j-faithfulness"
 version = "0.1.0"
-description = "Use the Jacobian lens to test the faithfulness of an LLM's decisions and rationales"
+description = "Use the Jacobian lens to test whether an LLM's rationales are faithful to its latent reasoning"
 readme = "DESIGN.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -48,5 +48,4 @@ testpaths = ["tests"]
 
 [tool.ruff.lint.per-file-ignores]
 # marimo displays a cell's trailing expression.
-"notebooks/*" = ["B018"]
 "scripts/*" = ["B018"]

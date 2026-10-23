@@ -5,11 +5,11 @@ At a position, a word scores TF × IDF: TF sums its reciprocal ranks over the
 layers, and IDF counts the documents at the other positions that contain it,
 so a concept that persists through the layers doesn't raise its own count.
 
-Against baseline read-outs of the same text under other roles (DESIGN.md,
-Latent readout, Keyword rows, step 4), J is built one of two ways: graded,
-where a word's TF at a unit is reduced by its highest TF at the same unit of
-any baseline (:func:`contrast`); or by subtraction, where every word of a
-baseline's J is dropped from J wherever it occurs (:func:`verbalize_against`).
+Against a baseline read-out of the same text under another role (DESIGN.md,
+Latent readout), a word's TF at a unit is reduced by its highest TF at the
+same unit of any baseline (:func:`contrast`). Graded, not by dropping the
+baseline's words: a consideration both roles carry stays where one weighs it
+more.
 """
 
 from __future__ import annotations
@@ -236,34 +236,6 @@ def verbalize(
         if ranked:
             j.append(Row(position, [w for _, w in ranked[:k]]))
     return j
-
-
-def subtract(j: J, baseline: J, k: int) -> J:
-    """J without any word that occurs anywhere in ``baseline``, or a variant
-    of one (see :func:`echoes`: couple ← couples), then up to ``k`` words per
-    position; positions left without words are omitted."""
-    seen = {w.casefold() for row in baseline for w in row.words}
-    out = []
-    for row in j:
-        kept = [w for w in row.words if not echoes(w, seen)][:k]
-        if kept:
-            out.append(Row(row.position, kept))
-    return out
-
-
-def verbalize_against(
-    readout: LatentReadout,
-    *baselines: LatentReadout,
-    k: int = 10,
-    loose_k: int = 50,
-    loose_min_tf: float = 0.5,
-) -> J:
-    """J of ``readout`` minus every word of each baseline's J (see
-    :func:`subtract`), all built loose (``loose_k`` words per position, TF ≥
-    ``loose_min_tf``), then up to ``k`` words per position."""
-    loose = {"k": loose_k, "min_tf": loose_min_tf}
-    seen = [row for baseline in baselines for row in verbalize(baseline, **loose)]
-    return subtract(verbalize(readout, **loose), seen, k)
 
 
 def fence(j: J) -> str:

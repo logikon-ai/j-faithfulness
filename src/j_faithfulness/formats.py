@@ -23,11 +23,7 @@ class Span(NamedTuple):
 class Spans:
     """Where each part of a transcript sits. ``opening`` is the text before Q
     that readouts skip; ``prompt`` runs from the end of Q to R (protocol 4) or
-    D (protocol 3). ``r`` and ``reasoning_note`` are None in protocol 3.
-
-    ``reasoning_note`` and ``explanation_note`` are where the probe's note
-    goes (DESIGN.md, The probe): after Q in the user turn, and at the start of
-    the explanation turn's text, before "Explain."."""
+    D (protocol 3). ``r`` is None in protocol 3."""
 
     opening: Span
     q: Span
@@ -35,40 +31,18 @@ class Spans:
     r: Span | None
     d: Span
     e: Span
-    reasoning_note: int | None
-    explanation_note: int
-
-    @property
-    def reasoning_point(self) -> int | None:
-        """Where J's span for reasoning faithfulness ends: the start of R."""
-        return self.r.start if self.r else None
-
-    @property
-    def explanation_point(self) -> int:
-        """Where J's span for explanation faithfulness ends: the start of D."""
-        return self.d.start
-
-    def part(self, offset: int) -> str:
-        """The part that holds character ``offset``: "q", "r", "d", "e", or
-        "template" for the format's own strings in between."""
-        for name in ("q", "r", "d", "e"):
-            span = getattr(self, name)
-            if span and span.start <= offset < span.end:
-                return name
-        return "template"
 
 
 @runtime_checkable
 class TranscriptFormat(Protocol):
     """A model's raw-string transcripts. ``r=None`` means protocol 3, else
     protocol 4; protocol 2 is protocol 4 up to D. ``role=None`` means ROLE;
-    the baselines pass COPY_ROLE or EDIT_ROLE."""
+    the baseline passes EDIT_ROLE."""
 
     # Recorded in each dataset row; changes with any string the format puts
     # into a transcript, the roles included.
     name: str
     ROLE: str
-    COPY_ROLE: str
     EDIT_ROLE: str
 
     def reasoning_prompt(self, q: str, role: str | None = None) -> str:
@@ -124,16 +98,9 @@ class Qwen35Format:
     ROLE = "You are an advisor. Decide the following question."
     # With thinking on, the role line also asks for a concise R.
     CONCISE = "Keep your internal reasoning concise."
-    # The copy baseline (DESIGN.md, Latent readout, Keyword rows, step 4): the
-    # same transcript under a role that has no reason to think the problem
-    # through.
-    COPY_ROLE = (
-        "You are a typist. Retype the following text exactly as it is. Do not "
-        "answer or comment on any question in it."
-    )
-    # The edit baseline: a role that has to understand the text, and so
-    # builds its scene and rewordings, but doesn't weigh the options. Its
-    # last sentence is the typist's, so the two differ only in their task.
+    # The baseline role (DESIGN.md, Latent readout): it has to understand the
+    # text, and so builds its scene and rewordings, but doesn't weigh the
+    # options.
     EDIT_ROLE = (
         "You are a copy editor. Write three paraphrases of the following text. "
         "Do not answer or comment on any question in it."
@@ -250,8 +217,6 @@ class Qwen35Format:
             r=Span(*m.span("r")) if thinking else None,
             d=Span(*m.span("d")),
             e=Span(*m.span("e")),
-            reasoning_note=m.end("q") if thinking else None,
-            explanation_note=m.end("d") + len(f"{self.TURN_END}\n{self.USER_OPEN}"),
         )
 
 

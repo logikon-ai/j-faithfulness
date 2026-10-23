@@ -277,7 +277,7 @@ def read_span(
     """Read out J's span for ``kind`` (DESIGN.md, Latent readout, Span), unit
     by unit, from Q on: Q and the generation prompt up to R, or up to D,
     with R's sentences as units if there is an R. ``role``: None for the
-    advisor, ``fmt.COPY_ROLE`` or ``fmt.EDIT_ROLE`` for a baseline."""
+    advisor, or another role such as ``fmt.EDIT_ROLE``."""
     if kind == "reasoning":
         context = fmt.reasoning_prompt(q, role)
     else:

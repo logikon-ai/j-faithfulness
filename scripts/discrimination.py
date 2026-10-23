@@ -85,7 +85,7 @@ def _(datasets):
     MODEL_ID = "Qwen/Qwen3.5-4B"
     DATASET = "ggbetz/cached-reasoning-records"
     SHA = "dc44f7efbee7a35b04ccf25b947d6145030088b1"
-    N_ITEMS = 10
+    N_ITEMS = 50
     DOSES = [0.0, 0.25, 0.5, 0.75, 0.9, 1.0]
     # Distractor and filler pairs per case: 10 items give little data, and
     # different pairs average out how unlike two particular items are.
@@ -402,14 +402,26 @@ def _(pd, trials):
 
 
 @app.cell
-def _(alt, results):
-    _base = alt.Chart(results).encode(
+def _(results):
+    # Means per point, computed here: a chart of every trial embeds them all
+    # in its output, which outgrows marimo's limit at 50 items.
+    curves = (
+        results.groupby(["contrast", "case", "signal"])[["log_odds", "correct"]]
+        .mean()
+        .reset_index()
+    )
+    return (curves,)
+
+
+@app.cell
+def _(alt, curves):
+    _base = alt.Chart(curves).encode(
         x=alt.X("signal:Q", title="signal fraction (1 − p)"),
         color=alt.Color("case:N", title=None),
     )
     (
         _base.mark_line(point=True)
-        .encode(y=alt.Y("mean(log_odds):Q", title="log-odds of the right answer"))
+        .encode(y=alt.Y("log_odds:Q", title="log-odds of the right answer"))
         .properties(width=220, height=180)
         .facet(column=alt.Column("contrast:N", title=None))
         .properties(title="Mean log-odds, averaged over both orders:")
@@ -418,16 +430,14 @@ def _(alt, results):
 
 
 @app.cell
-def _(alt, results):
-    _base = alt.Chart(results).encode(
+def _(alt, curves):
+    _base = alt.Chart(curves).encode(
         x=alt.X("signal:Q", title="signal fraction (1 − p)"),
         color=alt.Color("case:N", title=None),
     )
     (
         _base.mark_line(point=True)
-        .encode(
-            y=alt.Y("mean(correct):Q", title="accuracy", scale=alt.Scale(domain=[0, 1]))
-        )
+        .encode(y=alt.Y("correct:Q", title="accuracy", scale=alt.Scale(domain=[0, 1])))
         .properties(width=220, height=180)
         .facet(column=alt.Column("contrast:N", title=None))
         .properties(title="Accuracy as the candidates are diluted:")

@@ -54,15 +54,7 @@ def test_prefixes():
     assert QWEN35.explanation_prompt(Q, D).startswith(QWEN35.decision_prompt(Q) + D)
 
 
-def test_copy_baseline_is_the_same_text_under_the_typist_role():
-    for r in (None, R):
-        ours = QWEN35.transcript(Q, D, E, r=r)
-        copy = QWEN35.transcript(Q, D, E, r=r, role=QWEN35.COPY_ROLE)
-        assert copy == ours.replace(QWEN35.ROLE, QWEN35.COPY_ROLE, 1)
-        assert ours[QWEN35.parse(ours).q.start :] == copy[QWEN35.parse(copy).q.start :]
-
-
-@pytest.mark.parametrize("role", [None, QWEN35.ROLE, QWEN35.COPY_ROLE])
+@pytest.mark.parametrize("role", [None, QWEN35.ROLE, QWEN35.EDIT_ROLE])
 @pytest.mark.parametrize(
     ("r", "capped", "parsed_r"),
     [(None, False, None), (R, False, R), (R, True, R + "..."), ("\n", False, "\n")],
@@ -87,32 +79,18 @@ def test_round_trip(role, r, capped, parsed_r):
     assert field(text, spans.opening) == text[: text.index(Q)]
 
 
-def test_points():
+def test_prompt_span():
     text = QWEN35.transcript(Q, D, E, r=R)
     spans = QWEN35.parse(text)
-    assert text[: spans.reasoning_point] == QWEN35.reasoning_prompt(Q)
-    assert text[: spans.explanation_point] == QWEN35.decision_prompt(Q, r=R)
+    assert text[: spans.r.start] == QWEN35.reasoning_prompt(Q)
+    assert text[: spans.d.start] == QWEN35.decision_prompt(Q, r=R)
 
     text = QWEN35.transcript(Q, D, E)
     spans = QWEN35.parse(text)
-    assert spans.reasoning_point is None
-    assert text[: spans.explanation_point] == QWEN35.decision_prompt(Q)
+    assert text[: spans.d.start] == QWEN35.decision_prompt(Q)
     assert field(text, spans.prompt) == (
         "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
     )
-
-
-def test_part():
-    for r in (None, R):
-        text = QWEN35.transcript(Q, D, E, r=r)
-        spans = QWEN35.parse(text)
-        for name in ("q", "r", "d", "e"):
-            span = getattr(spans, name)
-            if span:
-                assert {spans.part(i) for i in range(*span)} == {name}
-        template = "".join(c for i, c in enumerate(text) if spans.part(i) == "template")
-        assert "Explain." in template and "<think>" in template
-        assert Q not in template
 
 
 @pytest.mark.parametrize(
@@ -156,30 +134,12 @@ def test_build_rejects_unparsable_fields(kwargs):
         QWEN35.transcript(**({"q": Q, "d": D, "e": E} | kwargs))
 
 
-def test_note_positions():
-    text = QWEN35.transcript(Q, D, E, r=R)
-    spans = QWEN35.parse(text)
-    assert text[: spans.reasoning_note].endswith(Q)
-    assert text[spans.reasoning_note :].startswith("<|im_end|>\n<|im_start|>assistant")
-    for r in (None, R):
-        text = QWEN35.transcript(Q, D, E, r=r)
-        spans = QWEN35.parse(text)
-        assert text[: spans.explanation_note].endswith(
-            f"{D}<|im_end|>\n<|im_start|>user\n"
-        )
-        assert text[spans.explanation_note :].startswith("Explain.<|im_end|>")
-    assert QWEN35.parse(QWEN35.transcript(Q, D, E)).reasoning_note is None
-
-
 def test_qwen35_is_a_transcript_format():
     assert isinstance(QWEN35, TranscriptFormat)
     assert FORMATS["Qwen/Qwen3.5-4B"] is QWEN35
 
 
-def test_baseline_roles_differ_only_in_their_task():
-    last = "Do not answer or comment on any question in it."
-    assert QWEN35.COPY_ROLE.endswith(last)
-    assert QWEN35.EDIT_ROLE.endswith(last)
+def test_baseline_is_the_same_text_under_the_editor_role():
     ours = QWEN35.transcript(Q, D, E, r=R)
     edit = QWEN35.transcript(Q, D, E, r=R, role=QWEN35.EDIT_ROLE)
     assert edit == ours.replace(QWEN35.ROLE, QWEN35.EDIT_ROLE, 1)

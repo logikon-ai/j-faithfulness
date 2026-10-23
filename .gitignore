@@ -219,7 +219,5 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Read-outs written on molab by scripts/read_baselines.py
-baseline-readouts.json.gz
-assessments.json
-assessments-mismatched.json
+# Results written on molab by scripts/discrimination.py
+discrimination.json

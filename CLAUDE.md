@@ -1,13 +1,14 @@
 # CLAUDE.md
 
-Library (`j_faithfulness`) plus one marimo demo notebook: use the Jacobian lens
-to test whether an LLM's rationales (reasoning traces and explanations) are
-faithful to its latent reasoning.
+Library (`j_faithfulness`) plus marimo notebooks in `scripts/`: use the
+Jacobian lens to test whether an LLM's rationales (reasoning traces and
+explanations) are faithful to its latent reasoning.
 
-- **[DESIGN.md](DESIGN.md):** method (v3, teacher-forced), API, open
-  questions. Read first.
-- **[docs/archive/](docs/archive/):** earlier designs. The v2 pilot's code and
-  notebook are at the git tag `v2-pilot`.
+- **[DESIGN.md](DESIGN.md):** method (v4, a discrimination task), status,
+  next steps. Read first.
+- **[docs/archive/](docs/archive/):** earlier designs. The v2 pilot's code is
+  at the git tag `v2-pilot`, the v3 probe's (IS/NOT, teacher-forced) at
+  `v3-probe`.
 
 ## jlens reference
 
@@ -47,19 +48,19 @@ lens_logits, model_logits, input_ids = lens.apply(
 - src layout, uv, ruff, pytest.
 - All work happens on `dev`. `main` holds only a work-in-progress README until
   the first release, when `dev` is merged into it.
-- Model-free code is tested locally; GPU work (readout, scoring, generating
-  the transcript cache) runs on molab.
+- Model-free code is tested locally; GPU work (readout, the discrimination
+  questions, generating the transcript cache) runs on molab.
 
 ## Code style
 
 - Let names carry the meaning: a function or variable says what it is
-  (`read_out`, `copy_baseline`, `delta_per_token`), so most lines need no
+  (`read_out`, `top_per_unit`, `log_odds_a`), so most lines need no
   comment.
 - Comment the why, not the what: a design choice ("max, not mean: a peak at
   one word survives"), a pitfall, or a pointer to DESIGN.md. Never narrate
   the code.
-- Small, pure functions: data in, data out, no hidden state, so the notebook
-  and the Inspect eval stay glue.
+- Small, pure functions: data in, data out, no hidden state, so the notebooks
+  stay glue.
 
 ## Prose style
 

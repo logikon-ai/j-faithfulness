@@ -12,10 +12,8 @@ from j_faithfulness.verbalize import (
     is_english,
     is_latin,
     is_word_like,
-    subtract,
     tf_idf,
     verbalize,
-    verbalize_against,
     words,
 )
 
@@ -204,7 +202,7 @@ def test_contrast_needs_the_same_words():
         contrast(a, b)
 
 
-def test_verbalize_against_a_baseline():
+def test_verbalize_graded_against_a_baseline():
     decide = readout([["Answer", "fair"]], [["Answer", "kind"]])
     copy = readout([["Answer"]], [["Answer"]])
     # Answer is as strong in copy: score 0. fair and kind: tf 1/2, not in
@@ -214,24 +212,3 @@ def test_verbalize_against_a_baseline():
         Row(1, ["kind"]),
     ]
     assert verbalize(decide, [copy], min_tf=0.5, min_score=0.4) == []
-
-
-def test_subtract_drops_baseline_words_anywhere():
-    j = [
-        Row(0, ["Girlfriend", "fair", "kind"]),
-        Row(1, ["marriage"]),
-        Row(2, ["a", "b", "c"]),
-    ]
-    baseline = [Row(5, ["girlfriends", "marriage"])]
-    assert subtract(j, baseline, k=2) == [Row(0, ["fair", "kind"]), Row(2, ["a", "b"])]
-
-
-def test_verbalize_against():
-    # Position 0: fair and kinder (rank 0 in both layers); position 1: Answer.
-    decide = readout([["fair", "kinder"], ["kinder", "fair"]], [["Answer"], ["Answer"]])
-    copy = readout([["kind"], ["kind"]], [["answers"], ["answers"]])
-    # kinder and Answer are variants of baseline words.
-    assert verbalize_against(decide, copy) == [Row(0, ["fair"])]
-    # A second baseline drops what it carries, too.
-    edit = readout([["fair"], ["fair"]], [["text"], ["text"]])
-    assert verbalize_against(decide, copy, edit) == []
