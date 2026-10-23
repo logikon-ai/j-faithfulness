@@ -74,14 +74,26 @@ thinking on, plus "Keep your internal reasoning concise.").
 
 ```
 <|im_start|>user\n{role}\n\n{Q}<|im_end|>\n
-<|im_start|>assistant\n<think>\n{R}\n</think>\n\n{D}          ← protocol 2 (reasoning)
-
-<|im_start|>user\n{role}\n\n{Q}<|im_end|>\n
-<|im_start|>assistant\n<think>\n\n</think>\n\n{D}             ← protocol 3 (explanation)
-<|im_start|>assistant\n<think>\n{R}\n</think>\n\n{D}          ← protocol 4 (explanation)
+<|im_start|>assistant\n<think>\n\n</think>\n\n{D}             ← protocol 3 (thinking off)
+<|im_start|>assistant\n<think>\n{R}\n</think>\n\n{D}          ← protocol 4 (thinking on)
 <|im_end|>\n<|im_start|>user\nExplain.<|im_end|>\n
 <|im_start|>assistant\n<think>\n\n</think>\n\n{E}
 ```
+
+Each item has two transcripts: protocol 3 (thinking off) and protocol 4
+(thinking on). Protocol 2, used by the reasoning test, is protocol 4 up to D.
+It needs no transcript of its own: the reasoning test scores only R, and since
+the model reads left to right, what follows R can't change log P(R). A test
+need not use every turn of a transcript.
+
+**The format is Qwen3.5's.** The strings above are Qwen3.5's ChatML and think
+tags: what its chat template renders for one turn, except that R is kept
+before the explanation turn. Protocols 3 and 4 fix the structure; a
+transcript format renders it in one model's strings. `formats.py` defines
+the interface `TranscriptFormat` (build each prefix, parse a transcript into
+spans and note positions) and one implementation, `Qwen35Format`, named
+`qwen3.5/1`. Another model needs its own format, and its name changes with
+any template string.
 
 **Transcripts are given.** The method only reads and teacher-forces them;
 it never generates. Two requirements:
@@ -91,20 +103,32 @@ it never generates. Two requirements:
 - **This raw format.** R verbatim between the think tags, the explanation
   turn exactly as above, so the spans can be located.
 
-Each item has one transcript per protocol.
+**Generation and cache.** `scripts/generate_transcripts.py`, a marimo
+notebook run on molab, generates the transcripts once. All generation code
+lives in this script; the library never generates. It uses batched HF
+generation in bf16, the same stack the readout and scoring use. Prompts are
+left-padded so each continues exactly where the raw string ends. It runs in
+three batched passes over the items:
+1. **R** in protocol 4, sampled with the model's default settings and capped
+   at 8,000 tokens. An R that hits the cap is closed with
+   `...\n</think>\n\n`. The `...` counts as part of R and is scored with it.
+2. **D** in both protocols: the most likely option letter after
+   `</think>\n\n`.
+3. **E** in both protocols, sampled.
 
-**Generation and cache.** `scripts/generate_transcripts.py` generates the
-transcripts once, on molab, with batched HF generation in bf16, the same
-stack the readout and scoring use. Prompts are left-padded so each continues
-exactly where the raw string ends. It runs in three batched passes over the
-items: R, sampled with the model's default settings and capped at 4,000
-tokens; D, the most likely option letter after `</think>\n\n`; E, sampled.
-The script pushes the transcripts to a Hugging Face dataset, which consumers
-load at a pinned revision. Each row holds the item (id, Q, options,
-reference concepts, domain), the raw transcript per protocol, and the
-metadata to judge it: model id and revision, sampling settings, seed, the
-cap and whether R hit it, and the template version. The first cache is 50
-dev items from DailyDilemmas; the test items stay untouched.
+Settings, with defaults: model id (`Qwen/Qwen3.5-4B`), number of items (50),
+dataset repo id (no default), HF token (a password field, falling back to
+`HF_TOKEN`), seed (0) and R cap (8,000). The seed is the sampling seed. The
+dev/test split keeps its own fixed seed, so dev items never overlap test
+items. Items are the first n of the dev split, so a larger n extends the
+cache without changing the items already in it.
+
+The script pushes the transcripts to a Hugging Face dataset and prints the
+commit, which consumers pin. Each row holds the item (id, Q, options and
+actions, reference concepts, domain), the two transcripts, and the metadata
+to judge them: the model id and its commit, the sampling settings, the seed,
+the cap and whether R hit it, and the transcript format's name. The first cache is
+50 dev items from DailyDilemmas; the test items stay untouched.
 
 
 ## Latent readout
@@ -262,12 +286,15 @@ comparisons cancel it; the absolute zero of Δ does not.
 ```
 j_faithfulness/
   items.py      shared item format; adapters (DailyDilemmas first); dev and test samples
-  protocols.py  raw-string transcripts (protocols 2–4): build, parse, locate spans
+  formats.py    transcript formats (Qwen3.5 first): build protocols 3 and 4, parse into spans
   lens.py       load(model_id) → (model, lens), cached; read out over a span, word by word
   verbalize.py  readout → keyword rows; contrast with the copy baseline → J
   probe.py      the note and the fenced J; the two arms for reasoning and explanation
   score.py      teacher-forced Δₜ and Δ(X); assess(); the model-level checks
 ```
+
+The library holds no generation code: it reads and teacher-forces given
+transcripts only.
 
 Two consumers build on it: the notebook and an
 [Inspect](https://inspect.aisi.org.uk/) eval. The API is shaped so that both
