@@ -49,3 +49,23 @@ lens_logits, model_logits, input_ids = lens.apply(
   the first release, when `dev` is merged into it.
 - Model-free code is tested locally; GPU work (readout, scoring, generating
   the transcript cache) runs on molab.
+
+## Code style
+
+- Let names carry the meaning: a function or variable says what it is
+  (`read_out`, `copy_baseline`, `delta_per_token`), so most lines need no
+  comment.
+- Comment the why, not the what: a design choice ("max, not mean: a peak at
+  one word survives"), a pitfall, or a pointer to DESIGN.md. Never narrate
+  the code.
+- Small, pure functions: data in, data out, no hidden state, so the notebook
+  and the Inspect eval stay glue.
+
+## Prose style
+
+- Plain words, short sentences, one idea per sentence. Each paragraph opens
+  with its point.
+- Say exactly what you mean, then stop: no hedging, intensifiers or filler.
+  When something is uncertain, say once what and why.
+- Define a term once, then use it consistently; don't vary words for style.
+  A new word suggests a new thing.
