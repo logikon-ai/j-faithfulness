@@ -1,12 +1,13 @@
 # CLAUDE.md
 
 Library (`j_faithfulness`) plus one marimo demo notebook: use the Jacobian lens
-to test the faithfulness (reason-responsiveness) of an LLM's decisions and
-rationales.
+to test whether an LLM's rationales (reasoning traces and explanations) are
+faithful to its latent reasoning.
 
-- **[DESIGN.md](DESIGN.md):** method, test logic, open questions. Read first.
-- **[PLAN.md](PLAN.md):** milestones and where things run (local vs molab GPU).
-  Tick items off as they're done.
+- **[DESIGN.md](DESIGN.md):** method (v3, teacher-forced), API, open
+  questions. Read first.
+- **[docs/archive/](docs/archive/):** earlier designs. The v2 pilot's code and
+  notebook are at the git tag `v2-pilot`.
 
 ## jlens reference
 
@@ -46,4 +47,5 @@ lens_logits, model_logits, input_ids = lens.apply(
 - src layout, uv, ruff, pytest.
 - All work happens on `dev`. `main` holds only a work-in-progress README until
   the first release, when `dev` is merged into it.
-- Model-free code is tested locally; GPU work runs on molab (see PLAN.md).
+- Model-free code is tested locally; GPU work (readout, scoring, generating
+  the transcript cache) runs on molab.

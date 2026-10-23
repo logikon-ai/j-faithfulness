@@ -4,13 +4,6 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from j_faithfulness.inject import (
-    EMPTY,
-    NOTICE,
-    OPPOSE,
-    control_block,
-    injected_decision_prompt,
-)
 from j_faithfulness.protocols import (
     CONCISE,
     ROLE,
@@ -49,23 +42,6 @@ def test_task_prompt():
     assert (prompt, skip) == (decision_prompt("Q?"), decision_skip())
 
 
-def test_injected_decision_prompt():
-    tail = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
-    assert injected_decision_prompt("Q?", "<latentthought>\na.\n</latentthought>") == (
-        f"<|im_start|>user\n{NOTICE}\n\n{ROLE}\n\nQ?\n\n"
-        "<latentthought>\na.\n</latentthought>" + tail
-    )
-    assert (
-        injected_decision_prompt("Q?")
-        == f"<|im_start|>user\n{NOTICE}\n\n{ROLE}\n\nQ?" + tail
-    )
-    assert injected_decision_prompt("Q?", notice=None) == decision_prompt("Q?")
-    # The instruction goes before the role and Q, so J is read already framed.
-    assert injected_decision_prompt("Q?", EMPTY, OPPOSE) == (
-        f"<|im_start|>user\n{NOTICE}\n\n{OPPOSE}\n\n{ROLE}\n\nQ?\n\n{EMPTY}" + tail
-    )
-
-
 def test_option_distribution_is_not_renormalized():
     logits = torch.log(torch.tensor([0.5, 0.2, 0.3]))
     p = option_distribution(logits, [0, 2], ["A", "B"])
@@ -95,12 +71,6 @@ def test_option_probs_reads_the_last_position():
     assert p == pytest.approx({"A": 0.6, "B": 0.3})
 
 
-def test_control_block():
-    assert control_block("B", "Not go") == (
-        "<latentthought>\nThe right choice is B) Not go.\n</latentthought>"
-    )
-
-
 def test_thinking_prompts():
     role = (
         "You are an advisor. Decide the following question. Keep your internal "
@@ -117,10 +87,6 @@ def test_thinking_prompts():
         decision_skip(thinking=True),
     )
     assert task_prompt("Q?", "copy", True)[1].endswith(" " + CONCISE + "\n\n")
-    assert injected_decision_prompt("Q?", EMPTY, OPPOSE, thinking=True) == (
-        f"<|im_start|>user\n{NOTICE}\n\n{OPPOSE}\n\n{role}\n\nQ?\n\n{EMPTY}"
-        "<|im_end|>\n<|im_start|>assistant\n<think>\n"
-    )
 
 
 def test_trace():
