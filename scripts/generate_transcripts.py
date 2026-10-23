@@ -302,28 +302,51 @@ def _(
     config,
     eos,
     items,
+    model_revision,
+    os,
     sample,
     sampling,
     think_end,
     transcript_format,
     transformers,
 ):
-    transformers.set_seed(config["seed"])
-    r_generated = sample(
-        [transcript_format.reasoning_prompt(i.q) for i in items],
-        [think_end, *eos],
-        config["r_cap"],
-        sampling["r"],
-        "R",
-        BATCH_SIZE,
+    import json as _json
+
+    # R is the slow pass: saved, so a failure in D or E doesn't cost it. The
+    # name holds every setting R depends on, so a changed one regenerates R.
+    r_path = (
+        f"r_{config['model_id'].replace('/', '_')}_{model_revision[:8]}"
+        f"_{transcript_format.name.replace('/', '_')}_n{config['n_items']}"
+        f"_seed{config['seed']}_cap{config['r_cap']}.json"
     )
+    if os.path.exists(r_path):
+        with open(r_path) as _f:
+            _saved = _json.load(_f)
+        assert _saved["ids"] == [i.id for i in items], "saved R is for other items"
+        r_generated = [tuple(pair) for pair in _saved["r"]]
+    else:
+        transformers.set_seed(config["seed"])
+        r_generated = sample(
+            [transcript_format.reasoning_prompt(i.q) for i in items],
+            [think_end, *eos],
+            config["r_cap"],
+            sampling["r"],
+            "R",
+            BATCH_SIZE,
+        )
+        with open(r_path, "w") as _f:
+            _json.dump({"ids": [i.id for i in items], "r": r_generated}, _f)
     # An R that didn't reach </think> is closed with "..." (DESIGN.md, Generation
     # and cache). The model puts a newline before </think>; the format adds it.
     reasonings = [
         (text.removesuffix("\n"), False) if stop == think_end else (text, True)
         for text, stop in r_generated
     ]
-    {"capped": sum(capped for _, capped in reasonings), "of": len(reasonings)}
+    {
+        "file": r_path,
+        "capped": sum(capped for _, capped in reasonings),
+        "of": len(reasonings),
+    }
     return (reasonings,)
 
 
@@ -363,6 +386,7 @@ def _(
     BATCH_SIZE,
     E_CAP,
     R_PROMPT_BATCH_SIZE,
+    config,
     decisions_3,
     decisions_4,
     eos,
@@ -371,7 +395,10 @@ def _(
     sample,
     sampling,
     transcript_format,
+    transformers,
 ):
+    # Seeded here too: with R loaded from disk, the RNG isn't where R left it.
+    transformers.set_seed(config["seed"] + 1)
     explanations_3 = sample(
         [
             transcript_format.explanation_prompt(i.q, d)

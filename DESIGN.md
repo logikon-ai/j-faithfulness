@@ -117,6 +117,11 @@ batched passes over the items:
 3. **E** in both protocols, sampled with the model card's non-thinking
    settings, since E follows an empty think block.
 
+R is saved to a JSON file named by every setting it depends on, and a rerun
+with the same settings loads it, so a failure in D or E doesn't cost the
+slowest pass. E is seeded on its own, so it doesn't depend on whether R was
+generated or loaded.
+
 For Qwen3.5-4B, the card gives temperature 1.0, top-p 0.95, top-k 20 for
 thinking and 0.7, 0.8, 20 for non-thinking, min-p 0 for both. HF generation
 has no presence penalty, so the card's 1.5 is left out.
