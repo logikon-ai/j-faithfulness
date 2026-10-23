@@ -43,3 +43,4 @@ testpaths = ["tests"]
 [tool.ruff.lint.per-file-ignores]
 # marimo displays a cell's trailing expression.
 "notebooks/*" = ["B018"]
+"scripts/*" = ["B018"]

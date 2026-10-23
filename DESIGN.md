@@ -54,13 +54,14 @@ NLI problems; consistency across contexts.
 
 ## Items
 
-Items come through adapters in one shared format: **Q** ending in the forced
-choice, **options** with labels and actions, **reference concepts** per
-option, and a **domain**. The first adapter is
-[DailyDilemmas](https://huggingface.co/datasets/kellycyy/daily_dilemmas):
+Items come through adapters in one shared format: an **id**, **Q** ending in
+the forced choice, **options** with labels and actions, a **domain**, and the
+**source** dataset with its revision. Annotations a source has beyond these
+stay in the source and are joined back by id when needed. The first adapter
+is [DailyDilemmas](https://huggingface.co/datasets/kellycyy/daily_dilemmas):
 binary dilemmas (A = to do, B = not to do) that make the model weigh
-considerations Q doesn't state, are contested, and come with the values each
-option serves, a reference for what J should surface. Dev and test items are
+considerations Q doesn't state and are contested. Its annotated values per
+option are a reference for what J should surface. Dev and test items are
 disjoint samples of the 1,360 dilemmas.
 
 
@@ -92,8 +93,9 @@ before the explanation turn. Protocols 3 and 4 fix the structure; a
 transcript format renders it in one model's strings. `formats.py` defines
 the interface `TranscriptFormat` (build each prefix, parse a transcript into
 spans and note positions) and one implementation, `Qwen35Format`, named
-`qwen3.5/1`. Another model needs its own format, and its name changes with
-any template string.
+`qwen3.5/1`. The format holds every string it puts into a transcript,
+including the roles and the cap mark, and its name changes with any of
+them. Another model needs its own format.
 
 **Transcripts are given.** The method only reads and teacher-forces them;
 it never generates. Two requirements:
@@ -123,12 +125,27 @@ dev/test split keeps its own fixed seed, so dev items never overlap test
 items. Items are the first n of the dev split, so a larger n extends the
 cache without changing the items already in it.
 
-The script pushes the transcripts to a Hugging Face dataset and prints the
-commit, which consumers pin. Each row holds the item (id, Q, options and
-actions, reference concepts, domain), the two transcripts, and the metadata
-to judge them: the model id and its commit, the sampling settings, the seed,
-the cap and whether R hit it, and the transcript format's name. The first cache is
-50 dev items from DailyDilemmas; the test items stay untouched.
+**Dataset.** The script pushes the transcripts to a Hugging Face dataset
+and prints the commit, which consumers pin. Each row is one transcript, so
+each item has two rows: protocol 3, then protocol 4. A row stores the
+transcript's parts, not the raw string: `row_transcript(row)` in
+`items.py` rebuilds the string exactly with the row's format, and refuses if
+the format's name no longer matches the row's. The fields:
+- **The item:** `id`, `q`, `domain`, `source`, `source_revision`, and
+  `options`, a list of `{label, action}` in option order. A list, not a map
+  keyed by label, keeps the schema the same whatever the labels, so items
+  from any adapter share one dataset.
+- **The model's output:** `r`, `d`, `d_probs` (in option order) and `e`. `r`
+  is the text between the think tags, cap mark included, as the model saw
+  it; it is null in protocol 3, which tells the protocols apart.
+- **`metadata`**, one dict: `model_id`, `model_revision` (the commit
+  loaded), `format` (its name), `sampling` (the model's default settings),
+  `seed`, `r_cap`, `e_cap` (2,000 tokens, a guard against a runaway E),
+  `r_capped` (null in protocol 3) and `e_capped`.
+
+`id` is unique per item, not per row; a row's key is `id` and whether `r` is
+null. The first cache is 50 dev items from DailyDilemmas; the test items
+stay untouched.
 
 
 ## Latent readout
@@ -309,8 +326,9 @@ are glue:
 3. **Cached loading by id.** `load(model_id)` returns one shared (model, lens)
    per id, so concurrent callers share one copy in GPU memory. GPU calls are
    synchronous; callers cap concurrency.
-4. **Transcripts as plain rows.** A transcript is strings plus the item's
-   fields, exactly as stored in the dataset, so any loader can pass it on.
+4. **Transcripts as plain rows.** A transcript is one dataset row: the
+   item's fields and the model's output as strings, exactly as stored, so any
+   loader can pass it on. The format turns it into the raw string.
 
 **The notebook** (`notebooks/demo.py`, marimo) loads the cached transcripts
 and generates nothing. It walks one item through reasoning and explanation
@@ -340,4 +358,5 @@ generates through chat templates, which drop R before later turns.
   context order. That would also keep J's length equal across items.
 - **J's content.** The band, thresholds and contrast were tuned on a few dev
   items. Whether J surfaces the values behind D's option on the test set is
-  worth checking before reading Δ.
+  worth checking before reading Δ; the values are joined back from
+  DailyDilemmas by id.

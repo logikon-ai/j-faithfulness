@@ -256,28 +256,6 @@ def verbalize_against(
     return subtract(verbalize(readout, **loose), verbalize(baseline, **loose), k)
 
 
-# Left out when matching reference concepts against J ("respect for others").
-CONCEPT_STOPWORDS = {"a", "an", "and", "for", "in", "of", "on", "the", "to", "with"}
-
-
-def concept_words(concept: str) -> set[str]:
-    return words(concept) - CONCEPT_STOPWORDS
-
-
-def touches(j: J, concept: str) -> bool:
-    """A word of J is a word of ``concept`` or a variant of one (see
-    :func:`echoes`): honest touches Honesty."""
-    cw = concept_words(concept)
-    return any(echoes(w, cw) for row in j for w in row.words)
-
-
-def in_context(concept: str, context: str) -> bool:
-    """A word of ``concept`` echoes ``context``. Such a concept can't show in J,
-    which drops context echo."""
-    cw = words(context)
-    return any(echoes(w, cw) for w in concept_words(concept))
-
-
 def fence(j: J) -> str:
     """J as a ``<latentthought>`` block, one comma-separated row per line."""
     lines = [", ".join(row.words) + "." for row in j]

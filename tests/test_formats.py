@@ -1,13 +1,6 @@
 import pytest
 
-from j_faithfulness.formats import (
-    COPY_ROLE,
-    FORMATS,
-    QWEN35,
-    ROLE,
-    Span,
-    TranscriptFormat,
-)
+from j_faithfulness.formats import FORMATS, QWEN35, Span, TranscriptFormat
 
 Q = "Should I tell my friend?\n\nA. Tell her.\nB. Don't tell her."
 R = "She trusts me. But it would hurt her!\n\nSo what matters more?\nHonesty."
@@ -64,12 +57,12 @@ def test_prefixes():
 def test_copy_baseline_is_the_same_text_under_the_typist_role():
     for r in (None, R):
         ours = QWEN35.transcript(Q, D, E, r=r)
-        copy = QWEN35.transcript(Q, D, E, r=r, role=COPY_ROLE)
-        assert copy == ours.replace(ROLE, COPY_ROLE, 1)
+        copy = QWEN35.transcript(Q, D, E, r=r, role=QWEN35.COPY_ROLE)
+        assert copy == ours.replace(QWEN35.ROLE, QWEN35.COPY_ROLE, 1)
         assert ours[QWEN35.parse(ours).q.start :] == copy[QWEN35.parse(copy).q.start :]
 
 
-@pytest.mark.parametrize("role", [ROLE, COPY_ROLE])
+@pytest.mark.parametrize("role", [None, QWEN35.ROLE, QWEN35.COPY_ROLE])
 @pytest.mark.parametrize(
     ("r", "capped", "parsed_r"),
     [(None, False, None), (R, False, R), (R, True, R + "..."), ("\n", False, "\n")],

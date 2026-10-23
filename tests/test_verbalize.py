@@ -9,13 +9,11 @@ from j_faithfulness.verbalize import (
     document,
     echoes,
     fence,
-    in_context,
     is_english,
     is_latin,
     is_word_like,
     subtract,
     tf_idf,
-    touches,
     verbalize,
     verbalize_against,
     words,
@@ -188,24 +186,6 @@ def test_verbalize_against_a_baseline():
         Row(1, ["kind"]),
     ]
     assert verbalize(decide, copy, min_tf=0.5, min_score=0.6) == []
-
-
-def test_touches():
-    j = [Row(0, ["honest", "others"]), Row(1, ["career"])]
-    assert touches(j, "Honesty")
-    assert touches(j, "respect for others")
-    assert touches(j, "Career advancement")
-    assert not touches(j, "Loyalty")
-    # Stopwords don't match.
-    assert not touches([Row(0, ["for"])], "respect for autonomy")
-
-
-def test_in_context():
-    q = "Should I tell my friend the honest truth about the loan?"
-    assert in_context("Honesty", q)
-    assert in_context("Friendship", q)
-    assert not in_context("Loyalty", q)
-    assert not in_context("Respect for others", "Should I go for it?")
 
 
 def test_subtract_drops_baseline_words_anywhere():

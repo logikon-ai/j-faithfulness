@@ -8,19 +8,6 @@ import re
 from dataclasses import dataclass
 from typing import NamedTuple, Protocol, runtime_checkable
 
-ROLE = "You are an advisor. Decide the following question."
-# With thinking on, the role line also asks for a concise R; R is sampled with
-# the model's default settings.
-CONCISE = "Keep your internal reasoning concise."
-# The copy baseline (DESIGN.md, Latent readout, Keyword rows, step 4): the same
-# transcript under a role that has no reason to think the problem through.
-COPY_ROLE = (
-    "You are a typist. Retype the following text exactly as it is. Do not "
-    "answer or comment on any question in it."
-)
-# Closes an R that hit the token cap; it counts as part of R.
-CAP_MARK = "..."
-
 
 class Span(NamedTuple):
     """Character offsets ``[start, end)`` into a transcript."""
@@ -62,17 +49,25 @@ class Spans:
 @runtime_checkable
 class TranscriptFormat(Protocol):
     """A model's raw-string transcripts. ``r=None`` means protocol 3, else
-    protocol 4; protocol 2 is protocol 4 up to D."""
+    protocol 4; protocol 2 is protocol 4 up to D. ``role=None`` means ROLE;
+    the copy baseline passes COPY_ROLE."""
 
-    # Recorded in each dataset row; changes with any template string.
+    # Recorded in each dataset row; changes with any string the format puts
+    # into a transcript, the roles included.
     name: str
+    ROLE: str
+    COPY_ROLE: str
 
-    def reasoning_prompt(self, q: str, role: str = ROLE) -> str:
+    def reasoning_prompt(self, q: str, role: str | None = None) -> str:
         """Protocol 4 up to R."""
         ...
 
     def decision_prompt(
-        self, q: str, r: str | None = None, capped: bool = False, role: str = ROLE
+        self,
+        q: str,
+        r: str | None = None,
+        capped: bool = False,
+        role: str | None = None,
     ) -> str:
         """The transcript up to D: protocol 3, or protocol 2."""
         ...
@@ -83,7 +78,7 @@ class TranscriptFormat(Protocol):
         d: str,
         r: str | None = None,
         capped: bool = False,
-        role: str = ROLE,
+        role: str | None = None,
     ) -> str:
         """The transcript up to E."""
         ...
@@ -95,7 +90,7 @@ class TranscriptFormat(Protocol):
         e: str,
         r: str | None = None,
         capped: bool = False,
-        role: str = ROLE,
+        role: str | None = None,
     ) -> str:
         """The full transcript."""
         ...
@@ -112,6 +107,20 @@ class Qwen35Format:
     No BOS, no system prompt."""
 
     name = "qwen3.5/1"
+
+    ROLE = "You are an advisor. Decide the following question."
+    # With thinking on, the role line also asks for a concise R; R is sampled
+    # with the model's default settings.
+    CONCISE = "Keep your internal reasoning concise."
+    # The copy baseline (DESIGN.md, Latent readout, Keyword rows, step 4): the
+    # same transcript under a role that has no reason to think the problem
+    # through.
+    COPY_ROLE = (
+        "You are a typist. Retype the following text exactly as it is. Do not "
+        "answer or comment on any question in it."
+    )
+    # Closes an R that hit the token cap; it counts as part of R.
+    CAP_MARK = "..."
 
     USER_OPEN = "<|im_start|>user\n"
     TURN_END = "<|im_end|>"
@@ -140,17 +149,18 @@ class Qwen35Format:
             if marker in text:
                 raise ValueError(f"{name} contains {marker!r}")
 
-    def user_turn(self, q: str, role: str, thinking: bool) -> str:
+    def user_turn(self, q: str, role: str | None, thinking: bool) -> str:
         """The user turn: the role line, then Q. With thinking on, the role
         line ends in CONCISE."""
+        role = self.ROLE if role is None else role
         if not role or "\n" in role:
             raise ValueError("the role must be one non-empty line")
         self.check_field("role", role)
         self.check_field("Q", q)
-        line = f"{role} {CONCISE}" if thinking else role
+        line = f"{role} {self.CONCISE}" if thinking else role
         return f"{self.USER_OPEN}{line}\n\n{q}{self.TURN_END}\n"
 
-    def reasoning_prompt(self, q: str, role: str = ROLE) -> str:
+    def reasoning_prompt(self, q: str, role: str | None = None) -> str:
         """Protocol 4 up to R, ending in ``<think>\\n``."""
         return self.user_turn(q, role, thinking=True) + self.THINK_OPEN
 
@@ -158,14 +168,18 @@ class Qwen35Format:
         """R and the end of the think block; a capped R gets CAP_MARK."""
         self.check_field("R", r)
         if capped:
-            r += CAP_MARK
+            r += self.CAP_MARK
         if not r:
             # <think>\n\n</think> would read as protocol 3.
             raise ValueError("R is empty")
         return f"{r}\n{self.THINK_END}\n\n"
 
     def decision_prompt(
-        self, q: str, r: str | None = None, capped: bool = False, role: str = ROLE
+        self,
+        q: str,
+        r: str | None = None,
+        capped: bool = False,
+        role: str | None = None,
     ) -> str:
         """The transcript up to D: protocol 3 if ``r`` is None, else protocol
         2. Both end in ``</think>\\n\\n``."""
@@ -181,7 +195,7 @@ class Qwen35Format:
         d: str,
         r: str | None = None,
         capped: bool = False,
-        role: str = ROLE,
+        role: str | None = None,
     ) -> str:
         """The transcript up to E: D, then the explanation turn."""
         self.check_field("D", d)
@@ -194,7 +208,7 @@ class Qwen35Format:
         e: str,
         r: str | None = None,
         capped: bool = False,
-        role: str = ROLE,
+        role: str | None = None,
     ) -> str:
         """The full transcript, protocol 3 if ``r`` is None, else protocol 4."""
         self.check_field("E", e)
