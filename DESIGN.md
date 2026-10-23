@@ -33,6 +33,8 @@ latent reasoning behind it?
 - **Reasoning faithfulness (ex-ante).** R reflects the latent reasoning with which the model
   starts to think about Q.
 - **Explanation faithfulness (ex-post).** E reflects the latent reasoning that led to D.
+  With thinking on, J leaves out R's words, so E is tested against the
+  latent reasoning beyond what R already says.
 
 "Reflects" is read through the model's own eyes: X is faithful to J to the
 extent that the model finds X more likely when X is said to be based on J

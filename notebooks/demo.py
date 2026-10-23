@@ -306,13 +306,13 @@ def _(alt, offsets, per_sentence, strip, tokenizer, tokens):
             )
         }
         profile = tokens.assign(value=[delta_at.get(start) for start, _ in offsets])
-        # Symmetric around 0, so the sign shows as red or blue.
-        reach = profile.value.abs().max()
+        # One scale for every strip, symmetric around 0: the sign shows as
+        # red or blue, and R and E compare by eye.
         return strip(
             profile,
             alt.Color(
                 "value:Q",
-                scale=alt.Scale(scheme="redblue", domain=[-reach, reach]),
+                scale=alt.Scale(scheme="redblue", domain=[-0.15, 0.15], clamp=True),
                 title="Δ",
             ),
             title,
@@ -385,7 +385,12 @@ def _(assess, lens, model, record, records):
 
     print("Without thinking (protocol 3), all in one call:\n")
     print("\n".join(", ".join(words) + "." for words in assessment.j))
-    print(f"\nΔ(E) = {assessment.delta:+.3f}, J-word gap = {assessment.j_word_gap}")
+    gap = assessment.j_word_gap
+    print(
+        f"\nΔ(E) = {assessment.delta:+.3f}, J-word gap = {gap:+.3f}"
+        if gap is not None
+        else f"\nΔ(E) = {assessment.delta:+.3f}, no J word in E"
+    )
     return
 
 
