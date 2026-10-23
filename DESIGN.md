@@ -121,7 +121,9 @@ thinking and 0.7, 0.8, 20 for non-thinking, min-p 0 for both. HF generation
 has no presence penalty, so the card's 1.5 is left out.
 
 **Dataset.** The script pushes the transcripts to a Hugging Face dataset;
-consumers pin its commit. Each row is one transcript, so each item has two
+consumers pin its commit. Each run loads the latest commit, replaces the rows
+with the same model, source, item and protocol, and pushes the result, so
+one dataset holds the transcripts of several models. Each row is one transcript, so each item has two
 rows. A row stores the transcript's parts, not the raw string:
 `row_transcript(row)` in `items.py` rebuilds the string exactly with the
 row's format, and refuses if the format's name no longer matches. The fields:
@@ -130,7 +132,8 @@ row's format, and refuses if the format's name no longer matches. The fields:
 - **The model's output:** `r`, `d`, `d_probs` (in option order) and `e`. `r`
   is null in protocol 3, which tells the protocols apart.
 - **`metadata`**: `model_id`, `model_revision`, `format`, `sampling`, `seed`,
-  `r_cap`, `e_cap`, `r_capped` and `e_capped`.
+  `r_cap`, `e_cap`, `r_capped`, `e_capped` and `generated_at` (UTC; null in
+  rows from before it was added).
 
 The current cache is `ggbetz/cached-reasoning-records` with Qwen3.5-4B on
 dev items of DailyDilemmas.

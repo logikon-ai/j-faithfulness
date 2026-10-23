@@ -20,6 +20,7 @@ app = marimo.App(width="medium")
 @app.cell
 def _():
     import os
+    from datetime import datetime, timezone
     from string import Template
 
     import datasets
@@ -42,6 +43,7 @@ def _():
         HfApi,
         Template,
         datasets,
+        datetime,
         load_daily_dilemmas,
         mo,
         os,
@@ -49,6 +51,7 @@ def _():
         split,
         to_row,
         torch,
+        timezone,
         transformers,
     )
 
@@ -370,6 +373,7 @@ def _(
 def _(
     E_CAP,
     config,
+    datetime,
     decisions_3,
     decisions_4,
     explanations_3,
@@ -379,6 +383,7 @@ def _(
     reasonings,
     row_transcript,
     sampling,
+    timezone,
     to_row,
     transcript_format,
 ):
@@ -390,6 +395,7 @@ def _(
         "seed": config["seed"],
         "r_cap": config["r_cap"],
         "e_cap": E_CAP,
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     # One row per transcript: protocol 3 (r is None), then protocol 4.
     rows = []
@@ -432,15 +438,17 @@ def _(
 
 @app.cell
 def _(Template):
-    # The dataset card's text; $model_id and $repo_id are filled in per run.
+    # The dataset card's text; $models and $repo_id are filled in per run.
     CARD = Template("""
 # j-faithfulness transcripts
 
-Transcripts of $model_id deciding forced-choice questions, for research on
+Transcripts of models deciding forced-choice questions, for research on
 the faithfulness of model rationales with
 [j-faithfulness](https://github.com/logikon-ai/j-faithfulness).
 
-Each item has two rows. In the first, thinking is off: the question, the
+Models: $models.
+
+Each item has two rows per model. In the first, thinking is off: the question, the
 decision D, then "Explain." and the explanation E. In the second, thinking is
 on, with the reasoning R before D.
 
@@ -451,15 +459,18 @@ on, with the reasoning R before D.
 | `r` | the text between the think tags; null with thinking off |
 | `d`, `d_probs` | the decision and P(D = option), in option order |
 | `e` | the explanation |
-| `metadata` | model and commit, transcript format, sampling, seed, caps |
+| `metadata` | model and commit, format, sampling, seed, caps, generation time |
 
-Each run replaces the contents in a new commit, so pin a revision:
+Each run adds its rows in a new commit and replaces the rows of earlier runs
+with the same model, item and thinking mode. Pin a revision and filter by
+model:
 
 ```python
 from datasets import load_dataset
 from j_faithfulness.items import row_transcript  # pip install git+https://github.com/logikon-ai/j-faithfulness
 
 rows = load_dataset("$repo_id", split="train", revision="<commit>")
+rows = rows.filter(lambda row: row["metadata"]["model_id"] == "<model id>")
 row_transcript(rows[0])  # the raw string the model saw
 ```
 
@@ -472,8 +483,42 @@ each row apply.
 
 
 @app.cell
-def _(CARD, DatasetCard, config, datasets, hf_token, rows):
-    datasets.Dataset.from_list(rows).push_to_hub(
+def _(HfApi, config, datasets, hf_token, rows):
+    # The latest commit holds every earlier run's rows, so it is the base.
+    # Two runs pushing at once would lose one run's rows: last push wins.
+    def row_key(row):
+        return (
+            row["metadata"]["model_id"],
+            row["source"],
+            row["id"],
+            row["r"] is None,
+        )
+
+    if HfApi(token=hf_token).repo_exists(
+        config["repo_id"], repo_type="dataset", token=hf_token
+    ):
+        old_rows = datasets.load_dataset(
+            config["repo_id"], split="train", token=hf_token
+        ).to_list()
+    else:
+        old_rows = []
+    new_keys = {row_key(row) for row in rows}
+    kept_rows = [row for row in old_rows if row_key(row) not in new_keys]
+    merged_rows = kept_rows + rows
+    {
+        "earlier": len(old_rows),
+        "replaced": len(old_rows) - len(kept_rows),
+        "new": len(rows),
+        "total": len(merged_rows),
+    }
+    return (merged_rows,)
+
+
+@app.cell
+def _(CARD, DatasetCard, config, datasets, hf_token, merged_rows, rows):
+    # Rows from before generated_at existed get null there: Arrow merges the
+    # metadata structs.
+    datasets.Dataset.from_list(merged_rows).push_to_hub(
         config["repo_id"],
         token=hf_token,
         private=True,
@@ -486,7 +531,8 @@ def _(CARD, DatasetCard, config, datasets, hf_token, rows):
     card.data.language = ["en"]
     card.data.pretty_name = "j-faithfulness transcripts"
     card.data.tags = ["faithfulness", "interpretability", "chain-of-thought"]
-    card.text = CARD.substitute(model_id=config["model_id"], repo_id=config["repo_id"])
+    models = sorted({row["metadata"]["model_id"] for row in merged_rows})
+    card.text = CARD.substitute(models=", ".join(models), repo_id=config["repo_id"])
     commit = card.push_to_hub(
         config["repo_id"], token=hf_token, commit_message="Dataset card"
     )
