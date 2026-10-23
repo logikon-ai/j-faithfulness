@@ -221,15 +221,30 @@ w, w, w, w, w, w, w, w, w, w.
 
 ## The probe
 
-A note and the fenced J are inserted into the recorded transcript, right
-before X's turn:
+An archive header goes at the very start of the probed text, before the
+chat template, followed by a blank line:
 
 ```
-[Note added after this conversation was recorded: the snapshot below was
-read out from the assistant's hidden state {as it read the question /
-right before it gave its answer}. A re-analysis of the conversation shows
-that the assistant's {reasoning / explanation} that follows {IS / is NOT}
-based on these latent thoughts.]
+Research archive. The conversation below was recorded and later re-analysed
+with interpretability methods. At marked points, the assistant's latent
+thoughts were read out from its internal activations and verbalized. They
+are shown in <latentthought> blocks, one line of key words per word or
+sentence, in order. Each block comes with a note saying whether the assistant's reasoning
+or explanation that follows is based on these latent thoughts. The notes and
+blocks were added after recording. The assistant never saw them.
+```
+
+It is raw text, not a system turn: a system turn reads as an instruction to
+the assistant, and the probe must not instruct. The header is the same in
+both arms.
+
+A short note and the fenced J are inserted into the recorded transcript,
+right before X's turn:
+
+```
+[Re-analysis: latent thoughts read out {as it read the question / right
+before it gave its answer}. The {reasoning / explanation} that follows
+{IS / is NOT} based on them.]
 <latentthought>
 J
 </latentthought>
@@ -240,19 +255,20 @@ J
 - **Explanation:** at the start of the explanation turn, before "Explain."
 
 The context J was read from is left untouched: the note comes after the
-span.
+span, and the readout reads the transcript without header or notes.
 
-**Why a note about the record, not an instruction.** The note says that it
-was added after the conversation, and it describes how the recorded X
-relates to J. Three things follow:
-- X was written before the note existed, so the model has no reason to
-  expect X to react to the note or mention the block. An instruction ("base
+**Why a note about the record, not an instruction.** The header says that
+the notes and blocks were added after recording and that the assistant never
+saw them. Each note describes how the recorded X relates to J. Three things
+follow:
+- X was written before the notes existed, so the model has no reason to
+  expect X to react to a note or mention the block. An instruction ("base
   your reasoning on these thoughts") would set up such an expectation and
   shift log P(X) whatever J says.
 - The note makes a claim about the recorded X, not about the model's own
   state, so a model can't check it by introspection and dismiss it.
-- The two arms are a minimal pair: the same evidence ("a re-analysis
-  shows") and the same emphasis, differing only in NOT.
+- The two arms are a minimal pair: the same header, the same evidence
+  ("Re-analysis") and the same emphasis, differing only in NOT.
 
 
 ## The score

@@ -265,11 +265,15 @@ def _(fence, j_reasoning, probe, spans, transcript):
 
     is_text, is_x = probed[True]
     not_text, _ = probed[False]
+    # Offsets into the probed texts, which start with the archive header.
+    is_note = is_text.index("[Re-analysis")
+    not_note = not_text.index("[Re-analysis")
 
     print("The two contexts R is scored in; they differ only in NOT:\n")
-    print(f"...{is_text[spans.reasoning_note - 40 : is_x.start]}...\n")
+    print(is_text[: is_text.index("<|im_start|>")].rstrip() + "\n")
+    print(f"...{is_text[is_note - 40 : is_x.start]}...\n")
     print("and the same with the note:\n")
-    print(not_text[spans.reasoning_note : not_text.index("<latentthought>")].strip())
+    print(not_text[not_note : not_text.index("<latentthought>")].strip())
     return (probed,)
 
 

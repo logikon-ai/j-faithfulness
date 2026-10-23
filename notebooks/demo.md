@@ -27,7 +27,7 @@ caption. A cell whose caption needs more than one sentence does too much.
 
 ## Probe and score: reasoning
 
-11. "The two contexts R is scored in; they differ only in NOT:" — `probe` under IS and is NOT → the end of each user turn with note and J.
+11. "The two contexts R is scored in; they differ only in NOT:" — `probe` under IS and is NOT → the archive header once, the end of the user turn with note and J, and the is-NOT note.
 12. "R is {Δ:+.3f} nats per token more likely when it is said to be based on J." — teacher-force R under both arms → Δ(R).
 13. "Where in R the fit sits, sentence by sentence:" — Δₜ averaged per sentence → R as a strip shaded by Δ.
 

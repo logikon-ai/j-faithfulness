@@ -10,7 +10,6 @@ import jlens
 import torch
 from jlens.hooks import ActivationRecorder
 
-from j_faithfulness import replay
 from j_faithfulness.formats import FORMATS, Kind
 from j_faithfulness.items import row_transcript
 from j_faithfulness.lens import (
@@ -34,7 +33,6 @@ class TokenLogprobs:
     logprobs: list[float]
 
 
-@replay.recorded(TokenLogprobs)
 @torch.no_grad()
 def x_logprobs(model: jlens.LensModel, text: str, start: int) -> TokenLogprobs:
     """Teacher-force ``text`` and return the log-probabilities of its tokens

@@ -9,7 +9,6 @@ import jlens
 import torch
 from jlens.hooks import ActivationRecorder
 
-from j_faithfulness import replay
 from j_faithfulness.formats import Kind, Span, TranscriptFormat
 
 MODEL_NAME = "Qwen/Qwen3.5-4B"
@@ -40,8 +39,6 @@ def load(model_id: str = MODEL_NAME):
     """
     import transformers
 
-    if replay.replay_path():
-        return replay.stand_in(model_id)
     hf_model = transformers.AutoModelForCausalLM.from_pretrained(
         model_id, dtype=torch.bfloat16
     ).cuda()
@@ -159,7 +156,6 @@ def units(
     return out
 
 
-@replay.recorded(LatentReadout)
 @torch.no_grad()
 def read_out(
     model: jlens.LensModel,
