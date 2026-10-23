@@ -1,10 +1,15 @@
 import re
 
+import pytest
+import torch
+
+from j_faithfulness import lens as lens_module
 from j_faithfulness.formats import Span
 from j_faithfulness.lens import (
     read_out,
     sentence_ids,
     skipped_tokens,
+    top_per_unit,
     units,
     word_ends,
 )
@@ -100,3 +105,40 @@ def test_sentence_ids():
     assert sentence_ids(tokens) == [0, 0, 0, 0, 1, 1, 1, 2]
     tokens = ["Role", ":", " Advisor", ".", "\n", "\n\n", "Task", "."]
     assert sentence_ids(tokens) == [0, 0, 0, 0, 0, 0, 1, 1]
+
+
+def top_per_unit_reference(states, read_units, unembed, top_n, chunk=512):
+    """The per-unit loop that :func:`top_per_unit` replaced."""
+    ranked = []
+    for unit in read_units:
+        best = None
+        for c in range(0, len(unit), chunk):
+            logits = unembed(states[unit[c : c + chunk]]).float()
+            peak = logits.log_softmax(-1).amax(0)
+            best = peak if best is None else torch.maximum(best, peak)
+        ranked.append(best.topk(min(top_n, len(best))).indices.tolist())
+    return ranked
+
+
+# Multi-position and single-position units, one overlapping another, and one
+# repeating a position.
+READ_UNITS = [[1, 2, 3], [4], [5, 6, 7, 8, 9], [10], [9, 10, 11], [12, 12], [0]]
+
+
+@pytest.mark.parametrize("chunk, unit_block", [(2048, 2048), (3, 2), (1, 1)])
+def test_top_per_unit_matches_the_per_unit_loop(tiny, monkeypatch, chunk, unit_block):
+    # Small CHUNK and UNIT_BLOCK make chunks span units and units span chunks.
+    monkeypatch.setattr(lens_module, "CHUNK", chunk)
+    monkeypatch.setattr(lens_module, "UNIT_BLOCK", unit_block)
+    model, lens = tiny
+    torch.manual_seed(0)
+    states = lens.transport(torch.randn(13, model.d_model), 2)
+    for top_n in (5, 100):
+        got = top_per_unit(states, READ_UNITS, model.unembed, top_n)
+        assert got == top_per_unit_reference(states, READ_UNITS, model.unembed, top_n)
+
+
+def test_top_per_unit_rejects_an_empty_unit(tiny):
+    model, _ = tiny
+    with pytest.raises(ValueError):
+        top_per_unit(torch.randn(3, model.d_model), [[0], []], model.unembed, 5)

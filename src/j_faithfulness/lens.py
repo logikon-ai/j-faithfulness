@@ -26,8 +26,15 @@ BAND = (8, 21)
 MAX_SEQ_LEN = 32768
 
 # Positions unembedded at once: the logits over a 250k vocabulary are the
-# large tensor, not the forward pass.
-CHUNK = 512
+# large tensor, not the forward pass. 2048 rows of float32 log-probabilities
+# take 2 GB, a few copies of which fit easily on molab's 96 GB; fewer, larger
+# calls keep the GPU busy.
+CHUNK = 2048
+
+# Units whose peaks are held at once: the [units, vocab] float32 buffer takes
+# 1 MB per unit, so a long context with tens of thousands of word units would
+# not fit in one buffer.
+UNIT_BLOCK = 2048
 
 
 @functools.cache
@@ -156,6 +163,41 @@ def units(
     return out
 
 
+def top_per_unit(
+    states: torch.Tensor,
+    read_units: list[list[int]],
+    unembed,
+    top_n: int,
+) -> list[list[int]]:
+    """The ``top_n`` token ids of each unit, ranked by their highest
+    log-probability over the unit's positions in ``states`` ([seq, d_model]),
+    which ``unembed`` maps to logits.
+
+    All positions are unembedded together, in chunks of CHUNK rows, and a
+    segment-max reduces the rows to one per unit. Each row is a (position,
+    unit) pair, so a position shared by several units counts for each; units
+    are disjoint in practice, and an overlap costs only a repeated unembedding.
+    """
+    if any(not unit for unit in read_units):
+        raise ValueError("every unit needs at least one position")
+    ranked: list[list[int]] = []
+    for b in range(0, len(read_units), UNIT_BLOCK):
+        block = read_units[b : b + UNIT_BLOCK]
+        rows = [p for unit in block for p in unit]
+        unit_of_row = torch.tensor([u for u, unit in enumerate(block) for _ in unit])
+        peak = None
+        for c in range(0, len(rows), CHUNK):
+            log_probs = unembed(states[rows[c : c + CHUNK]]).float().log_softmax(-1)
+            if peak is None:
+                peak = log_probs.new_full((len(block), log_probs.shape[-1]), -torch.inf)
+                unit_of_row = unit_of_row.to(log_probs.device)
+            # The max over a unit doesn't depend on how its rows are chunked.
+            index = unit_of_row[c : c + CHUNK, None].expand_as(log_probs)
+            peak.scatter_reduce_(0, index, log_probs, reduce="amax")
+        ranked += peak.topk(min(top_n, peak.shape[-1])).indices.tolist()
+    return ranked
+
+
 @torch.no_grad()
 def read_out(
     model: jlens.LensModel,
@@ -209,16 +251,9 @@ def read_out(
     for layer in layers:
         # One transport per layer: the Jacobian moves to the device once.
         transported = lens.transport(activations.pop(layer).float(), layer)
-        for u, unit in enumerate(read_units):
-            best = None
-            # Chunks bound the [positions, vocab] log-probabilities of a long
-            # sentence; the max over them doesn't depend on the chunking.
-            for c in range(0, len(unit), CHUNK):
-                logits = model.unembed(transported[unit[c : c + CHUNK]]).float()
-                peak = logits.log_softmax(-1).amax(0)
-                best = peak if best is None else torch.maximum(best, peak)
-            ranked = best.topk(min(top_n, len(best))).indices.tolist()
-            top[u].append([decode(i) for i in ranked])
+        ranked = top_per_unit(transported, read_units, model.unembed, top_n)
+        for u, ids in enumerate(ranked):
+            top[u].append([decode(i) for i in ids])
     return LatentReadout(
         context,
         context_tokens,
