@@ -137,6 +137,7 @@ def test_build_rejects_unparsable_fields(kwargs):
 def test_qwen35_is_a_transcript_format():
     assert isinstance(QWEN35, TranscriptFormat)
     assert FORMATS["Qwen/Qwen3.5-4B"] is QWEN35
+    assert FORMATS["Qwen/Qwen3.5-27B"] is QWEN35
 
 
 def test_baseline_is_the_same_text_under_the_editor_role():

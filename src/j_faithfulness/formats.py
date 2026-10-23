@@ -221,5 +221,9 @@ class Qwen35Format:
 
 
 QWEN35 = Qwen35Format()
-# The format of each model's transcripts, by model id.
-FORMATS: dict[str, TranscriptFormat] = {"Qwen/Qwen3.5-4B": QWEN35}
+# The format of each model's transcripts, by model id. The Qwen3.5 sizes
+# share one chat template, so they share one format.
+FORMATS: dict[str, TranscriptFormat] = {
+    "Qwen/Qwen3.5-4B": QWEN35,
+    "Qwen/Qwen3.5-27B": QWEN35,
+}

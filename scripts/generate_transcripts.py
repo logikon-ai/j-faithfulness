@@ -164,11 +164,14 @@ def _(config):
     # mode for E, which follows an empty think block. The repo ships no
     # generation_config.json, so transformers' generic defaults would apply
     # otherwise. HF generate has no presence_penalty (the card: 1.5 for both).
+    QWEN35_SAMPLING = {
+        "r": {"temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.0},
+        "e": {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "min_p": 0.0},
+    }
+    # The 4B and 27B cards give the same settings.
     SAMPLING = {
-        "Qwen/Qwen3.5-4B": {
-            "r": {"temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.0},
-            "e": {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "min_p": 0.0},
-        }
+        "Qwen/Qwen3.5-4B": QWEN35_SAMPLING,
+        "Qwen/Qwen3.5-27B": QWEN35_SAMPLING,
     }
     # Recorded in each row's metadata.
     sampling = SAMPLING[config["model_id"]]
@@ -178,8 +181,10 @@ def _(config):
 
 @app.cell
 def _(hf_model, mo, tokenizer, torch, transformers):
-    # Generous: one batch holds every item on molab's 96 GB.
-    BATCH_SIZE = 64
+    # Sized for the 27B on molab's 96 GB: ~54 GB of weights, and a KV cache of
+    # ~64 KB per token (16 full-attention layers), ~18 GB for 32 rows of up to
+    # ~8,500 tokens. 64 rows would leave too little headroom.
+    BATCH_SIZE = 32
     # E is short, so its cap only guards against a runaway reply.
     E_CAP = 2000
 
@@ -199,8 +204,8 @@ def _(hf_model, mo, tokenizer, torch, transformers):
 
     class Progress(transformers.StoppingCriteria):
         """Never stops generation; moves the bar on as rows reach a stop
-        token. A bar over batches alone wouldn't move: one batch holds every
-        item."""
+        token. A bar over batches alone would barely move: a batch holds dozens
+        of items."""
 
         def __init__(self, bar, stops, n_rows, batch, max_new_tokens):
             self.bar, self.batch, self.max_new_tokens = bar, batch, max_new_tokens

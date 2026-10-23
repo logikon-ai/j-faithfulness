@@ -99,7 +99,8 @@ transcript format renders it in one model's strings. `formats.py` defines
 the interface `TranscriptFormat` (build each prefix, parse a transcript into
 spans) and one implementation, `Qwen35Format`, named `qwen3.5/1`. The format
 holds every string it puts into a transcript, the roles included, and its
-name changes with any of them. Another model needs its own format.
+name changes with any of them. Qwen3.5-27B shares the 4B's chat template and
+so its format; another model family needs its own.
 
 **Transcripts are the subject model's own.** The test is whether a model's
 own rationale fits its own J.
