@@ -86,14 +86,17 @@ def _(datasets):
 @app.cell
 def _(alt):
     def strip(tokens, color, title, points=None):
-        """The transcript as one row of tokens, colored by ``color``, with a
-        labelled rule at each of ``points``."""
-        chart = (
+        """The whole transcript as one row of tokens: those with a ``value``
+        colored by ``color``, the rest light grey; a labelled rule at each of
+        ``points``."""
+        base = (
             alt.Chart(tokens, title=title)
-            .mark_rect()
-            .encode(x=alt.X("i:O", axis=None), color=color, tooltip=["i", "token"])
+            .encode(x=alt.X("i:O", axis=None), tooltip=list(tokens.columns))
             .properties(width=800, height=40)
         )
+        chart = base.mark_rect(color="lightgrey") + base.transform_filter(
+            "isValid(datum.value)"
+        ).mark_rect().encode(color=color)
         if points is not None:
             at_point = alt.Chart(points).encode(x="i:O")
             chart += at_point.mark_rule(size=2) + at_point.mark_text(
@@ -117,7 +120,6 @@ def _(FORMATS, MODEL_ID, alt, pd, record, row_transcript, strip, transformers):
         "r": "Reasoning (R)",
         "d": "Decision (D)",
         "e": "Explanation (E)",
-        "template": "Template",
     }
 
     def token_at(char):
@@ -127,7 +129,7 @@ def _(FORMATS, MODEL_ID, alt, pd, record, row_transcript, strip, transformers):
         {
             "i": range(len(offsets)),
             "token": [tokenizer.decode([t]) for t in encoding["input_ids"]],
-            "part": [parts[spans.part(start)] for start, _ in offsets],
+            "value": [parts.get(spans.part(start)) for start, _ in offsets],
         }
     )
     points = pd.DataFrame(
@@ -143,11 +145,11 @@ def _(FORMATS, MODEL_ID, alt, pd, record, row_transcript, strip, transformers):
 
     strip(
         tokens,
-        alt.Color("part:N", sort=list(parts.values()), title=None),
+        alt.Color("value:N", sort=list(parts.values()), title=None),
         "Where faithfulness is tested: R against J before R, E against J before D.",
         points,
     )
-    return spans, transcript
+    return offsets, spans, tokenizer, tokens, transcript
 
 
 @app.cell
@@ -272,9 +274,13 @@ def _(fence, j_reasoning, probe, spans, transcript):
         for based in (True, False)
     }
 
+    is_text, is_x = probed[True]
+    not_text, _ = probed[False]
+
     print("The two contexts R is scored in; they differ only in NOT:\n")
-    for text, x in probed.values():
-        print(f"...{text[spans.reasoning_note - 40 : x.start]}...\n")
+    print(f"...{is_text[spans.reasoning_note - 40 : is_x.start]}...\n")
+    print("and the same with the note:\n")
+    print(not_text[spans.reasoning_note : not_text.index("<latentthought>")].strip())
     return (probed,)
 
 
@@ -293,18 +299,42 @@ def _(deltas, model, probed, x_logprobs):
 
 
 @app.cell
-def _(alt, delta_r, pd, per_sentence, r_based, strip):
-    profile = pd.DataFrame(
-        {
-            "i": range(len(delta_r)),
-            "token": r_based.tokens,
-            "delta": per_sentence(r_based.tokens, delta_r),
-        }
-    )
+def _(
+    alt,
+    delta_r,
+    offsets,
+    per_sentence,
+    probed,
+    r_based,
+    spans,
+    strip,
+    tokenizer,
+    tokens,
+):
+    # The scored tokens are the last of the probed text; shift their offsets
+    # back into the transcript to find R's tokens there.
+    probed_text, probed_r = probed[True]
+    scored = tokenizer(probed_text, return_offsets_mapping=True)["offset_mapping"]
+    shift = probed_r.start - spans.r.start
+    delta_at = {
+        start - shift: delta
+        for (start, _), delta in zip(
+            scored[-len(delta_r) :],
+            per_sentence(r_based.tokens, delta_r),
+            strict=True,
+        )
+    }
+    profile = tokens.assign(value=[delta_at.get(start) for start, _ in offsets])
 
+    # Symmetric around 0, so the sign shows as red or blue.
+    reach = profile.value.abs().max()
     strip(
         profile,
-        alt.Color("delta:Q", scale=alt.Scale(scheme="redblue", domainMid=0), title="Δ"),
+        alt.Color(
+            "value:Q",
+            scale=alt.Scale(scheme="redblue", domain=[-reach, reach]),
+            title="Δ",
+        ),
         "Where in R the fit sits, sentence by sentence:",
     )
     return

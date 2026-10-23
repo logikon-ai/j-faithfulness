@@ -76,12 +76,17 @@ def deltas(based: TokenLogprobs, not_based: TokenLogprobs) -> list[float]:
 
 def sentence_ids(tokens: list[str]) -> list[int]:
     """The sentence each token belongs to; a sentence ends with a token that
-    holds ``.``, ``?``, ``!`` or a line break (DESIGN.md, Units)."""
-    ids, sentence = [], 0
+    holds ``.``, ``?``, ``!`` or a line break (DESIGN.md, Units). Whitespace
+    after the end stays with the sentence, so a bare line break isn't a
+    sentence of its own."""
+    ids, sentence, ended = [], 0, False
     for token in tokens:
+        if ended and token.strip():
+            sentence += 1
+            ended = False
         ids.append(sentence)
         if any(mark in token for mark in ".?!\n"):
-            sentence += 1
+            ended = True
     return ids
 
 
