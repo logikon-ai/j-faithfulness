@@ -128,6 +128,8 @@ def tf_idf(readout: LatentReadout) -> list[dict[str, tuple[float, float]]]:
     IDF is ``log((N + 1) / (df + 1))`` over the documents at the other
     positions; with no other positions it is 1.
     """
+    # TODO: IDF from Q's units alone (DESIGN.md, Keyword rows, step 2), with
+    # R's sentence units when the explanation readout is built.
     docs = [[document(ranked) for ranked in layers] for layers in readout.top]
     df = Counter(key for layers in docs for d in layers for key in d)
     n = sum(len(layers) for layers in docs)
