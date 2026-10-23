@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 
 import jlens
 import torch
+
+from j_faithfulness import replay
 
 MODEL_NAME = "Qwen/Qwen3.5-4B"
 LENS_REPO = "neuronpedia/jacobian-lens"
@@ -22,23 +25,26 @@ BAND = (8, 21)
 MAX_SEQ_LEN = 32768
 
 
-def load(model_name: str = MODEL_NAME):
-    """Load Qwen3.5-4B (bf16, CUDA) and its lens.
+@functools.cache
+def load(model_id: str = MODEL_NAME):
+    """Load Qwen3.5-4B (bf16, CUDA) and its lens, once per id.
 
-    Returns ``(hf_model, model, lens)``: the HF model (for generation), its
-    jlens wrapper, and the :class:`jlens.JacobianLens`.
+    Returns ``(model, lens)``: the jlens wrapper of the HF model, and the
+    :class:`jlens.JacobianLens`.
     """
     import transformers
 
+    if replay.replay_path():
+        return replay.stand_in(model_id)
     hf_model = transformers.AutoModelForCausalLM.from_pretrained(
-        model_name, dtype=torch.bfloat16
+        model_id, dtype=torch.bfloat16
     ).cuda()
-    tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
     model = jlens.from_hf(hf_model, tokenizer)
     lens = jlens.JacobianLens.from_pretrained(
         LENS_REPO, filename=LENS_FILE, revision=LENS_REVISION
     )
-    return hf_model, model, lens
+    return model, lens
 
 
 @dataclass
@@ -83,6 +89,7 @@ def skipped_tokens(tokens: list[str], skip: str) -> int:
     return len(tokens) if text == skip else 0
 
 
+@replay.recorded(LatentReadout)
 @torch.no_grad()
 def read_out(
     model: jlens.LensModel,

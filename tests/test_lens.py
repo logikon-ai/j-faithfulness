@@ -62,3 +62,15 @@ def test_read_out_long_context_is_not_truncated(tiny):
     # The tiny tokenizer is byte-level: 600 chars is past jlens's default 512.
     r = read_out(model, lens, "a" * 599 + "b", band=(4, 4), positions=[-1], top_n=5)
     assert r.positions == [600]
+
+
+def test_read_out_records_and_replays(tiny, tmp_path, monkeypatch):
+    model, lens = tiny
+    path = str(tmp_path / "replay.json.gz")
+    monkeypatch.setenv("J_FAITHFULNESS_RECORD", path)
+    recorded = read_out(model, lens, "ab cd", band=(1, 2), top_n=5)
+    monkeypatch.delenv("J_FAITHFULNESS_RECORD")
+    monkeypatch.setenv("J_FAITHFULNESS_REPLAY", path)
+    assert read_out(None, None, "ab cd", band=(1, 2), top_n=5) == recorded
+    with pytest.raises(KeyError):
+        read_out(None, None, "ab cd", band=(1, 3), top_n=5)

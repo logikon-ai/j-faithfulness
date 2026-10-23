@@ -102,6 +102,19 @@ def test_points():
     )
 
 
+def test_part():
+    for r in (None, R):
+        text = QWEN35.transcript(Q, D, E, r=r)
+        spans = QWEN35.parse(text)
+        for name in ("q", "r", "d", "e"):
+            span = getattr(spans, name)
+            if span:
+                assert {spans.part(i) for i in range(*span)} == {name}
+        template = "".join(c for i, c in enumerate(text) if spans.part(i) == "template")
+        assert "Explain." in template and "<think>" in template
+        assert Q not in template
+
+
 @pytest.mark.parametrize(
     "text",
     [

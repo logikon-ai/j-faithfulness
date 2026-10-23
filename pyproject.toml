@@ -19,7 +19,13 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["marimo", "pytest", "ruff"]
+dev = [
+    "altair>=6.2.2",
+    "datasets>=5.1.0",
+    "marimo",
+    "pytest",
+    "ruff",
+]
 
 [tool.hatch.metadata]
 allow-direct-references = true

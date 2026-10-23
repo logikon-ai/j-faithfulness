@@ -45,6 +45,15 @@ class Spans:
         """Where J's span for explanation faithfulness ends: the start of D."""
         return self.d.start
 
+    def part(self, offset: int) -> str:
+        """The part that holds character ``offset``: "q", "r", "d", "e", or
+        "template" for the format's own strings in between."""
+        for name in ("q", "r", "d", "e"):
+            span = getattr(self, name)
+            if span and span.start <= offset < span.end:
+                return name
+        return "template"
+
 
 @runtime_checkable
 class TranscriptFormat(Protocol):
