@@ -181,10 +181,13 @@ def _(config):
 
 @app.cell
 def _(hf_model, mo, tokenizer, torch, transformers):
-    # Sized for the 27B on molab's 96 GB: ~54 GB of weights, and a KV cache of
-    # ~64 KB per token (16 full-attention layers), ~18 GB for 32 rows of up to
-    # ~8,500 tokens. 64 rows would leave too little headroom.
+    # Sized for the 27B on molab's 96 GB, beside its 50 GB of weights. R's
+    # prompts are short, so its batch holds only a KV cache of ~64 KB per token
+    # (16 full-attention layers): ~17 GB for 32 rows of 8,000 tokens.
     BATCH_SIZE = 32
+    # A prompt that holds R runs to ~8,500 tokens, and its prefill peaks at
+    # ~1 GB per 1,000 tokens in the MLP alone: 32 such rows ran out of memory.
+    R_PROMPT_BATCH_SIZE = 16
     # E is short, so its cap only guards against a runaway reply.
     E_CAP = 2000
 
@@ -230,15 +233,15 @@ def _(hf_model, mo, tokenizer, torch, transformers):
             self.reported = finished
 
     @torch.no_grad()
-    def sample(prompts, stops, max_new_tokens, settings, title):
+    def sample(prompts, stops, max_new_tokens, settings, title, batch_size):
         """A continuation of each prompt, sampled with ``settings``, cut before
         its first stop token, with the stop token it ended at (None: it hit the
         cap)."""
         out = []
-        starts = range(0, len(prompts), BATCH_SIZE)
+        starts = range(0, len(prompts), batch_size)
         with mo.status.progress_bar(total=len(prompts), title=title) as bar:
             for b, i in enumerate(starts, 1):
-                enc = left_padded(prompts[i : i + BATCH_SIZE])
+                enc = left_padded(prompts[i : i + batch_size])
                 progress = Progress(
                     bar,
                     stops,
@@ -264,27 +267,38 @@ def _(hf_model, mo, tokenizer, torch, transformers):
         return out
 
     @torch.no_grad()
-    def option_probs(prompts, options):
+    def option_probs(prompts, options, batch_size):
         """P(D = o) after each prompt, for each of its single-token options o
         (``options[k]`` belongs to ``prompts[k]``)."""
         out = []
-        for i in range(0, len(prompts), BATCH_SIZE):
-            enc = left_padded(prompts[i : i + BATCH_SIZE])
-            logits = hf_model(**enc, logits_to_keep=1).logits[:, -1]
+        for i in range(0, len(prompts), batch_size):
+            enc = left_padded(prompts[i : i + batch_size])
+            # No KV cache: D is one forward pass, and the cache of 16 rows that
+            # hold R would take ~9 GB.
+            logits = hf_model(**enc, logits_to_keep=1, use_cache=False).logits[:, -1]
             for p, opts in zip(
                 torch.softmax(logits.float(), -1),
-                options[i : i + BATCH_SIZE],
+                options[i : i + batch_size],
                 strict=True,
             ):
                 ids = tokenizer.convert_tokens_to_ids(opts)
                 out.append(dict(zip(opts, p[ids].tolist(), strict=True)))
         return out
 
-    return E_CAP, eos, option_probs, sample, think_end
+    return (
+        BATCH_SIZE,
+        E_CAP,
+        R_PROMPT_BATCH_SIZE,
+        eos,
+        option_probs,
+        sample,
+        think_end,
+    )
 
 
 @app.cell
 def _(
+    BATCH_SIZE,
     config,
     eos,
     items,
@@ -301,6 +315,7 @@ def _(
         config["r_cap"],
         sampling["r"],
         "R",
+        BATCH_SIZE,
     )
     # An R that didn't reach </think> is closed with "..." (DESIGN.md, Generation
     # and cache). The model puts a newline before </think>; the format adds it.
@@ -313,18 +328,28 @@ def _(
 
 
 @app.cell
-def _(items, option_probs, reasonings, transcript_format):
+def _(
+    BATCH_SIZE,
+    R_PROMPT_BATCH_SIZE,
+    items,
+    option_probs,
+    reasonings,
+    transcript_format,
+):
     # D needs no sampling: the most likely option letter.
-    def decide(prompts):
-        probs = option_probs(prompts, [i.options for i in items])
+    def decide(prompts, batch_size):
+        probs = option_probs(prompts, [i.options for i in items], batch_size)
         return [(max(p, key=p.get), p) for p in probs]
 
-    decisions_3 = decide([transcript_format.decision_prompt(i.q) for i in items])
+    decisions_3 = decide(
+        [transcript_format.decision_prompt(i.q) for i in items], BATCH_SIZE
+    )
     decisions_4 = decide(
         [
             transcript_format.decision_prompt(i.q, r, capped)
             for i, (r, capped) in zip(items, reasonings, strict=True)
-        ]
+        ],
+        R_PROMPT_BATCH_SIZE,
     )
     [
         (i.id, d3, d4)
@@ -335,7 +360,9 @@ def _(items, option_probs, reasonings, transcript_format):
 
 @app.cell
 def _(
+    BATCH_SIZE,
     E_CAP,
+    R_PROMPT_BATCH_SIZE,
     decisions_3,
     decisions_4,
     eos,
@@ -354,6 +381,7 @@ def _(
         E_CAP,
         sampling["e"],
         "E, protocol 3",
+        BATCH_SIZE,
     )
     explanations_4 = sample(
         [
@@ -366,6 +394,7 @@ def _(
         E_CAP,
         sampling["e"],
         "E, protocol 4",
+        R_PROMPT_BATCH_SIZE,
     )
     {
         "capped, protocol 3": sum(stop is None for _, stop in explanations_3),

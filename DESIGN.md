@@ -319,8 +319,9 @@ Qwen3.5-4B as subject and judge, 50 items, 4 draws, graded J. At full signal:
    comparable.
 3. **Qwen3.5-27B as subject.** A lens exists
    (`qwen3.5-27b/jlens/Salesforce-wikitext/Qwen3.5-27B_jacobian_lens.pt`,
-   branch `qwen-n1000`). It needs a new transcript cache, a format entry, a
-   lens file per model id in `load`, and a band retuned for its layers.
+   branch `qwen-n1000`), and `LENSES` maps it. It needs a new transcript
+   cache and a band retuned for its 64 layers: the band in `LENSES`,
+   16–42, is the 4B's scaled to depth.
 4. **Normalization.** The ratio of the fit to the foreign effect partly
    controls for how well the lens reads a model.
 

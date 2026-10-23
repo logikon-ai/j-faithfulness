@@ -30,11 +30,12 @@ def _():
     import torch
 
     from j_faithfulness.formats import FORMATS
-    from j_faithfulness.lens import MAX_SEQ_LEN, load, read_span
+    from j_faithfulness.lens import LENSES, MAX_SEQ_LEN, load, read_span
     from j_faithfulness.verbalize import fence, verbalize
 
     return (
         FORMATS,
+        LENSES,
         MAX_SEQ_LEN,
         alt,
         datasets,
@@ -117,23 +118,24 @@ def _(datasets):
 
 
 @app.cell
-def _(FORMATS, MODEL_ID, load):
+def _(FORMATS, LENSES, MODEL_ID, load):
     fmt = FORMATS[MODEL_ID]
+    band = LENSES[MODEL_ID].band
     model, lens = load(MODEL_ID)
 
     print(f"Load {MODEL_ID} ({model.n_layers} layers) with its Jacobian lens.")
-    return fmt, lens, model
+    return band, fmt, lens, model
 
 
 @app.cell
-def _(cases, fmt, lens, mo, model, read_span, verbalize):
+def _(band, cases, fmt, lens, mo, model, read_span, verbalize):
     read = []
     with mo.status.progress_bar(total=len(cases), title="Read out") as _bar:
         for _case in cases:
             _bar.update(increment=0, subtitle=f"{_case['id']}: {_case['kind']}")
             _args = (model, lens, fmt, _case["kind"], _case["q"], _case["r"])
-            editor = read_span(*_args, fmt.EDIT_ROLE)
-            advisor = read_span(*_args)
+            editor = read_span(*_args, fmt.EDIT_ROLE, band=band)
+            advisor = read_span(*_args, band=band)
             # The same two read-outs, contrasted both ways. Graded, not by
             # subtraction: subtraction drops every word both roles produce,
             # the item's core considerations among them, from both J's.

@@ -11,15 +11,32 @@ from jlens.hooks import ActivationRecorder
 
 from j_faithfulness.formats import Kind, Span, TranscriptFormat
 
-MODEL_NAME = "Qwen/Qwen3.5-4B"
 LENS_REPO = "neuronpedia/jacobian-lens"
-LENS_FILE = "qwen3.5-4b/jlens/Salesforce-wikitext/Qwen3.5-4B_jacobian_lens_n1000.pt"
 LENS_REVISION = "qwen-n1000"
 
-# Mid-network layers J is read from (DESIGN.md, Latent readout): the known
-# intermediates rank near the top from layers 6–9, and at the token before D
-# the answer enters the top 10 at layer 22.
-BAND = (8, 21)
+
+@dataclass(frozen=True)
+class LensSpec:
+    """A model's pre-fitted lens file and the band of layers J is read from
+    (DESIGN.md, Latent readout)."""
+
+    file: str
+    band: tuple[int, int]
+
+
+LENSES: dict[str, LensSpec] = {
+    # The known intermediates rank near the top from layers 6–9, and at the
+    # token before D the answer enters the top 10 at layer 22.
+    "Qwen/Qwen3.5-4B": LensSpec(
+        "qwen3.5-4b/jlens/Salesforce-wikitext/Qwen3.5-4B_jacobian_lens_n1000.pt",
+        (8, 21),
+    ),
+    # Placeholder: the 4B's band scaled from 32 to 64 layers, not yet retuned.
+    "Qwen/Qwen3.5-27B": LensSpec(
+        "qwen3.5-27b/jlens/Salesforce-wikitext/Qwen3.5-27B_jacobian_lens.pt",
+        (16, 42),
+    ),
+}
 
 # lens.apply truncates from the right at max_seq_len, which would cut off the
 # end of the context. Read-outs pass this and fail if the context reaches it.
@@ -38,8 +55,9 @@ UNIT_BLOCK = 2048
 
 
 @functools.cache
-def load(model_id: str = MODEL_NAME):
-    """Load Qwen3.5-4B (bf16, CUDA) and its lens, once per id.
+def load(model_id: str):
+    """Load the model (bf16, CUDA) and its lens from :data:`LENSES`, once per
+    id.
 
     Returns ``(model, lens)``: the jlens wrapper of the HF model, and the
     :class:`jlens.JacobianLens`.
@@ -51,9 +69,15 @@ def load(model_id: str = MODEL_NAME):
     ).cuda()
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
     model = jlens.from_hf(hf_model, tokenizer)
+    spec = LENSES[model_id]
     lens = jlens.JacobianLens.from_pretrained(
-        LENS_REPO, filename=LENS_FILE, revision=LENS_REVISION
+        LENS_REPO, filename=spec.file, revision=LENS_REVISION
     )
+    # Fail before a long run, not inside it: a lens fitted on fewer layers
+    # than the band would raise only at the first read-out.
+    missing = set(range(spec.band[0], spec.band[1] + 1)) - set(lens.source_layers)
+    if missing:
+        raise ValueError(f"{model_id}: lens has no layers {sorted(missing)}")
     return model, lens
 
 
@@ -272,12 +296,14 @@ def read_span(
     q: str,
     r: str | None = None,
     role: str | None = None,
-    band: tuple[int, int] = BAND,
+    *,
+    band: tuple[int, int],
 ) -> LatentReadout:
     """Read out J's span for ``kind`` (DESIGN.md, Latent readout, Span), unit
     by unit, from Q on: Q and the generation prompt up to R, or up to D,
     with R's sentences as units if there is an R. ``role``: None for the
-    advisor, or another role such as ``fmt.EDIT_ROLE``."""
+    advisor, or another role such as ``fmt.EDIT_ROLE``. ``band``: the
+    model's, from :data:`LENSES`."""
     if kind == "reasoning":
         context = fmt.reasoning_prompt(q, role)
     else:
