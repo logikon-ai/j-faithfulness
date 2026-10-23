@@ -6,6 +6,7 @@
 #     "datasets",
 #     "transformers>=5.5",
 #     "flash-linear-attention",
+#     "jlens @ git+https://github.com/anthropics/jacobian-lens.git@581d398613e5602a5af361e1c34d3a92ea82ba8e",
 #     "j-faithfulness @ git+https://github.com/logikon-ai/j-faithfulness.git@dev",
 # ]
 # ///
@@ -27,11 +28,28 @@ def _():
     import marimo as mo
     import pandas as pd
     import torch
-    import transformers
+    from jlens.hooks import ActivationRecorder
 
     from j_faithfulness.formats import FORMATS
+    from j_faithfulness.lens import MAX_SEQ_LEN, load, read_span
+    from j_faithfulness.verbalize import fence, verbalize_against
 
-    return FORMATS, alt, datasets, json, mo, pd, random, torch, transformers
+    return (
+        ActivationRecorder,
+        FORMATS,
+        MAX_SEQ_LEN,
+        alt,
+        datasets,
+        fence,
+        json,
+        load,
+        mo,
+        pd,
+        random,
+        read_span,
+        torch,
+        verbalize_against,
+    )
 
 
 @app.cell
@@ -40,11 +58,21 @@ def _(mo):
     # Can the model tell which readout belongs to a rationale?
 
     The model sees X (R or E) and two readouts, and answers A or B: one
-    forward pass per question. The right candidate is X's own J, the wrong
-    one another item's J. Both are diluted the same way: a fraction p of
-    their rows, at the same places, is replaced by the rows of a third
-    item's J. The signal fraction 1 − p sets the difficulty; at p = 1 both
-    candidates are the same and accuracy is at chance.
+    forward pass per question. The right candidate is X's own J: the
+    advisor's read-out minus the copy editor's, what deciding adds. Three
+    contrasts for the wrong one:
+
+    - **reversed:** the editor's read-out minus the advisor's, what
+      paraphrasing adds. Same item, same tokens, same topic.
+    - **reversed, foreign X:** the same two candidates, shown with another
+      item's X. A preference for J here is register (J sounds like
+      deciding), not fit; the fit is the reversed contrast minus this one.
+    - **foreign:** another item's J. Different topic.
+
+    Both candidates are diluted the same way: a fraction p of their rows, at
+    the same places, is replaced by the rows of a third item's J. The signal
+    fraction 1 − p sets the difficulty; at p = 1 both candidates are the same
+    and the answer is at chance.
 
     Each question is asked in both orders, and the log-odds of the right
     answer are averaged over them, which cancels a bias towards A or B.
@@ -53,59 +81,115 @@ def _(mo):
 
 
 @app.cell
-def _(datasets, json):
+def _(datasets):
     MODEL_ID = "Qwen/Qwen3.5-4B"
     DATASET = "ggbetz/cached-reasoning-records"
     SHA = "dc44f7efbee7a35b04ccf25b947d6145030088b1"
-    # J's from a run of demo.py (cells 17–24): no read-outs here.
-    J_FILE = "assessments.json"
+    N_ITEMS = 10
     DOSES = [0.0, 0.25, 0.5, 0.75, 0.9, 1.0]
     # Distractor and filler pairs per case: 10 items give little data, and
     # different pairs average out how unlike two particular items are.
     DRAWS = 4
+    # Cases whose reversed J has fewer rows are left out: the candidates are
+    # cut to the shorter J, and a few rows say little.
+    MIN_ROWS = 5
     OUT = "discrimination.json"
 
-    with open(J_FILE) as f:
-        assessments = json.load(f)
     records = datasets.load_dataset(DATASET, revision=SHA, split="train")
-    xs = {
-        (row["id"], 4 if row["r"] else 3, kind): row["r"]
-        if kind == "reasoning"
-        else row["e"]
-        for row in records
-        if row["metadata"]["model_id"] == MODEL_ID
-        for kind in ("reasoning", "explanation")
-    }
+    rows = [row for row in records if row["metadata"]["model_id"] == MODEL_ID]
+    item_ids = list(dict.fromkeys(row["id"] for row in rows))[:N_ITEMS]
     cases = [
         {
-            "id": a["id"],
-            "protocol": a["protocol"],
-            "kind": a["kind"],
-            "x": xs[a["id"], a["protocol"], a["kind"]],
-            "j": a["j"],
+            "id": row["id"],
+            "protocol": 4 if row["r"] else 3,
+            "kind": kind,
+            "q": row["q"],
+            "r": row["r"],
+            "x": row["r"] if kind == "reasoning" else row["e"],
         }
-        for a in assessments
+        for row in rows
+        if row["id"] in item_ids
+        for kind in (("reasoning", "explanation") if row["r"] else ("explanation",))
     ]
 
-    print(f"{len(cases)} cases from {J_FILE}, {len({c['id'] for c in cases})} items")
-    return DOSES, DRAWS, MODEL_ID, OUT, cases
+    print(f"{len(item_ids)} items, {len(cases)} cases")
+    return DOSES, DRAWS, MIN_ROWS, MODEL_ID, OUT, cases
 
 
 @app.cell
-def _(MODEL_ID, torch, transformers):
-    hf_model = transformers.AutoModelForCausalLM.from_pretrained(
-        MODEL_ID, dtype=torch.bfloat16
-    ).cuda()
-    tokenizer = transformers.AutoTokenizer.from_pretrained(MODEL_ID)
-
-    print(f"Load {MODEL_ID}.")
-    return hf_model, tokenizer
-
-
-@app.cell
-def _(FORMATS, MODEL_ID):
+def _(FORMATS, MODEL_ID, load):
     fmt = FORMATS[MODEL_ID]
+    model, lens = load(MODEL_ID)
 
+    print(f"Load {MODEL_ID} ({model.n_layers} layers) with its Jacobian lens.")
+    return fmt, lens, model
+
+
+@app.cell
+def _(cases, fmt, lens, mo, model, read_span, verbalize_against):
+    read = []
+    with mo.status.progress_bar(total=len(cases), title="Read out") as _bar:
+        for _case in cases:
+            _bar.update(increment=0, subtitle=f"{_case['id']}: {_case['kind']}")
+            _args = (model, lens, fmt, _case["kind"], _case["q"], _case["r"])
+            editor = read_span(*_args, fmt.EDIT_ROLE)
+            advisor = read_span(*_args)
+            # The same two read-outs, subtracted both ways.
+            read.append(
+                {
+                    **_case,
+                    "j": verbalize_against(advisor, editor),
+                    "reversed": verbalize_against(editor, advisor),
+                }
+            )
+            _bar.update()
+
+    print(f"Read out {len(read)} cases as advisor and as copy editor.")
+    return (read,)
+
+
+@app.cell
+def _(fence, read):
+    _case = next(c for c in read if c["kind"] == "explanation" and c["r"])
+
+    print(f"{_case['id']}, explanation, protocol 4. J, what deciding adds:\n")
+    print(fence(_case["j"]))
+    print("\nReversed J, what paraphrasing adds:\n")
+    print(fence(_case["reversed"]))
+    return
+
+
+@app.cell
+def _(MIN_ROWS, pd, read):
+    row_counts = pd.DataFrame(
+        [
+            {
+                "id": c["id"],
+                "case": f"{c['kind']}, protocol {c['protocol']}",
+                "J rows": len(c["j"]),
+                "reversed rows": len(c["reversed"]),
+            }
+            for c in read
+        ]
+    )
+    # Plain word lists from here on: the candidates mix rows of several J's.
+    kept = [
+        {
+            **c,
+            "j": [r.words for r in c["j"]],
+            "reversed": [r.words for r in c["reversed"]],
+        }
+        for c in read
+        if min(len(c["j"]), len(c["reversed"])) >= MIN_ROWS
+    ]
+
+    print(f"Rows per J; {len(kept)} of {len(read)} cases have ≥ {MIN_ROWS} in both:")
+    row_counts
+    return (kept,)
+
+
+@app.cell
+def _(fmt):
     def block(rows):
         return "\n".join(", ".join(words) + "." for words in rows)
 
@@ -142,103 +226,135 @@ def _(random):
             return [rows[-1]]
         return [rows[round(i * (len(rows) - 1) / (n - 1))] for i in range(n)]
 
-    def diluted(own, foreign, filler, p, seed):
+    def diluted(own, other, filler, p, seed):
         """The right and the wrong candidate at dose ``p``: all three J's cut
         to one length, then the same ``p`` of rows in both replaced by the
         filler's. One order per seed, so the replaced rows nest across p."""
-        n = min(len(own), len(foreign), len(filler))
-        own, foreign, filler = (spread_rows(rows, n) for rows in (own, foreign, filler))
+        n = min(len(own), len(other), len(filler))
+        own, other, filler = (spread_rows(rows, n) for rows in (own, other, filler))
         order = list(range(n))
         random.Random(seed).shuffle(order)
         replaced = set(order[: round(p * n)])
         right = [filler[i] if i in replaced else own[i] for i in range(n)]
-        wrong = [filler[i] if i in replaced else foreign[i] for i in range(n)]
+        wrong = [filler[i] if i in replaced else other[i] for i in range(n)]
         return right, wrong
 
     return (diluted,)
 
 
 @app.cell
-def _(hf_model, tokenizer, torch):
+def _(ActivationRecorder, MAX_SEQ_LEN, model, torch):
     letters = {}
     for _letter in "AB":
-        _ids = tokenizer.encode(f" {_letter}", add_special_tokens=False)
+        _ids = model.tokenizer.encode(f" {_letter}", add_special_tokens=False)
         assert len(_ids) == 1, f"' {_letter}' is not one token"
         letters[_letter] = _ids[0]
 
+    final_layer = model.n_layers - 1
+
     @torch.no_grad()
     def log_odds_a(prompt):
-        """log P(A) − log P(B) for the next token."""
-        enc = tokenizer(prompt, return_tensors="pt").to(hf_model.device)
-        logits = hf_model(**enc, logits_to_keep=1).logits[0, -1].float()
+        """log P(A) − log P(B) for the next token. Through the lens wrapper,
+        as score.x_logprobs does, so the model is loaded once."""
+        ids = model.encode(prompt, max_length=MAX_SEQ_LEN)
+        if ids.shape[-1] >= MAX_SEQ_LEN:
+            raise ValueError(f"prompt reaches MAX_SEQ_LEN={MAX_SEQ_LEN} tokens")
+        with ActivationRecorder(model.layers, at=[final_layer]) as recorder:
+            model.forward(ids)
+            last = recorder.activations[final_layer][0, -1:]
+        logits = model.unembed(last)[0].float()
         return float(logits[letters["A"]] - logits[letters["B"]])
 
     return (log_odds_a,)
 
 
 @app.cell
-def _(DOSES, DRAWS, OUT, cases, diluted, json, log_odds_a, mo, question, random):
+def _(
+    DOSES,
+    DRAWS,
+    OUT,
+    diluted,
+    json,
+    kept,
+    log_odds_a,
+    mo,
+    question,
+    random,
+):
     # Distractor m and filler k from the same kind and protocol, so all
     # candidates were read the same way.
     groups = {}
-    for _i, _case in enumerate(cases):
+    for _i, _case in enumerate(kept):
         groups.setdefault((_case["kind"], _case["protocol"]), []).append(_i)
 
+    def contrasts(case, m):
+        """(contrast, X shown, wrong candidate) for one distractor item."""
+        return [
+            ("reversed", case["x"], case["reversed"]),
+            ("reversed, foreign X", kept[m]["x"], case["reversed"]),
+            ("foreign", case["x"], kept[m]["j"]),
+        ]
+
     trials = []
-    with mo.status.progress_bar(
-        total=len(cases) * DRAWS * len(DOSES), title="Ask"
-    ) as _bar:
-        for _i, _case in enumerate(cases):
+    _total = len(kept) * DRAWS * len(DOSES) * 3
+    with mo.status.progress_bar(total=_total, title="Ask") as _bar:
+        for _i, _case in enumerate(kept):
+            label = f"{_case['kind']}, protocol {_case['protocol']}"
             others = [i for i in groups[_case["kind"], _case["protocol"]] if i != _i]
             pairs = random.Random(_i).sample(
-                [(m, k) for m in others for k in others if m != k], DRAWS
+                [(m, k) for m in others for k in others if m != k],
+                min(DRAWS, len(others) * (len(others) - 1)),
             )
             for _draw, (m, k) in enumerate(pairs):
-                for p in DOSES:
-                    _bar.update(
-                        increment=0, subtitle=f"{_case['id']} {_case['kind']}, p = {p}"
-                    )
-                    right, wrong = diluted(
-                        _case["j"], cases[m]["j"], cases[k]["j"], p, f"{_i} {_draw}"
-                    )
-                    right_first = log_odds_a(
-                        question(_case["kind"], _case["x"], right, wrong)
-                    )
-                    right_second = -log_odds_a(
-                        question(_case["kind"], _case["x"], wrong, right)
-                    )
-                    trials.append(
-                        {
-                            "id": _case["id"],
-                            "case": f"{_case['kind']}, protocol {_case['protocol']}",
-                            "foreign": cases[m]["id"],
-                            "filler": cases[k]["id"],
-                            "p": p,
-                            "rows": len(right),
-                            "right_first": right_first,
-                            "right_second": right_second,
-                        }
-                    )
-                    _bar.update()
+                for contrast, x, other in contrasts(_case, m):
+                    for p in DOSES:
+                        _bar.update(
+                            increment=0,
+                            subtitle=f"{_case['id']} {label}, {contrast}, p = {p}",
+                        )
+                        right, wrong = diluted(
+                            _case["j"], other, kept[k]["j"], p, f"{_i} {_draw}"
+                        )
+                        right_first = log_odds_a(
+                            question(_case["kind"], x, right, wrong)
+                        )
+                        right_second = -log_odds_a(
+                            question(_case["kind"], x, wrong, right)
+                        )
+                        trials.append(
+                            {
+                                "id": _case["id"],
+                                "case": label,
+                                "contrast": contrast,
+                                "other": kept[m]["id"],
+                                "filler": kept[k]["id"],
+                                "p": p,
+                                "rows": len(right),
+                                "right_first": right_first,
+                                "right_second": right_second,
+                            }
+                        )
+                        _bar.update()
     with open(OUT, "w") as _f:
-        json.dump(trials, _f)
+        json.dump({"cases": kept, "trials": trials}, _f)
 
-    print(f"Asked {2 * len(trials)} questions; wrote them to {OUT}.")
+    print(f"Asked {2 * len(trials)} questions; wrote them and the J's to {OUT}.")
     return (trials,)
 
 
 @app.cell
 def _(pd, trials):
     results = pd.DataFrame(trials)
-    # Averaged over both orders, the log-odds of the right answer; > 0 counts
-    # as correct. Per order, the raw accuracy shows the position bias.
+    # Averaged over both orders, the log-odds of the right answer. A tie (at
+    # p = 1 the candidates are the same) counts as half correct.
     results["log_odds"] = (results.right_first + results.right_second) / 2
-    results["correct"] = results.log_odds > 0
+    results["correct"] = (results.log_odds > 0) + 0.5 * (results.log_odds == 0)
+    # Per order, the raw accuracy shows the position bias.
     results["correct_first"] = results.right_first > 0
     results["correct_second"] = results.right_second > 0
     results["signal"] = 1 - results.p
 
-    results.groupby(["case", "signal"])[
+    results.groupby(["contrast", "case", "signal"])[
         ["correct", "correct_first", "correct_second", "log_odds"]
     ].mean().round(3)
     return (results,)
@@ -252,39 +368,53 @@ def _(alt, results):
     )
     (
         _base.mark_line(point=True)
+        .encode(y=alt.Y("mean(log_odds):Q", title="log-odds of the right answer"))
+        .properties(width=220, height=180)
+        .facet(column=alt.Column("contrast:N", title=None))
+        .properties(title="Mean log-odds, averaged over both orders:")
+    )
+    return
+
+
+@app.cell
+def _(alt, results):
+    _base = alt.Chart(results).encode(
+        x=alt.X("signal:Q", title="signal fraction (1 − p)"),
+        color=alt.Color("case:N", title=None),
+    )
+    (
+        _base.mark_line(point=True)
         .encode(
             y=alt.Y("mean(correct):Q", title="accuracy", scale=alt.Scale(domain=[0, 1]))
         )
-        .properties(title="Accuracy as the candidates are diluted:", width=320)
-        | _base.mark_line(point=True)
-        .encode(y=alt.Y("mean(log_odds):Q", title="log-odds of the right answer"))
-        .properties(title="Mean log-odds, averaged over both orders:", width=320)
+        .properties(width=220, height=180)
+        .facet(column=alt.Column("contrast:N", title=None))
+        .properties(title="Accuracy as the candidates are diluted:")
     )
     return
 
 
 @app.cell
 def _(pd, results):
-    def threshold(group, level=0.75):
-        """The lowest signal fraction at which accuracy reaches ``level``,
-        linearly interpolated; None if it never does."""
-        acc = group.groupby("signal").correct.mean().sort_index()
-        above = acc[acc >= level]
-        if above.empty:
-            return None
-        s1 = above.index[0]
-        below = acc[acc.index < s1]
-        if below.empty:
-            return s1
-        s0, a0, a1 = below.index[-1], below.iloc[-1], acc[s1]
-        return s0 + (level - a0) * (s1 - s0) / (a1 - a0)
+    # The fit: at full signal, the preference for J with X's own text minus
+    # with another item's text, paired per item; mean and standard error.
+    full = results[results.signal == 1]
+    per_item = full.pivot_table(
+        index=["case", "id"], columns="contrast", values="log_odds"
+    )
+    fit = per_item["reversed"] - per_item["reversed, foreign X"]
+    by_case = fit.groupby(level="case")
 
     pd.DataFrame(
         {
-            "accuracy at full signal": results[results.signal == 1]
-            .groupby("case")
-            .correct.mean(),
-            "signal for 75%": results.groupby("case").apply(threshold),
+            "reversed": per_item["reversed"].groupby(level="case").mean(),
+            "reversed, foreign X": per_item["reversed, foreign X"]
+            .groupby(level="case")
+            .mean(),
+            "fit": by_case.mean(),
+            "fit SE": by_case.std() / by_case.count() ** 0.5,
+            "items": by_case.count(),
+            "foreign": per_item["foreign"].groupby(level="case").mean(),
         }
     ).round(3)
     return
