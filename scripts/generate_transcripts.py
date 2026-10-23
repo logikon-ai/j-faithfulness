@@ -20,12 +20,13 @@ app = marimo.App(width="medium")
 @app.cell
 def _():
     import os
+    from string import Template
 
     import datasets
     import marimo as mo
     import torch
     import transformers
-    from huggingface_hub import HfApi
+    from huggingface_hub import DatasetCard, HfApi
 
     from j_faithfulness.formats import FORMATS
     from j_faithfulness.items import (
@@ -36,8 +37,10 @@ def _():
     )
 
     return (
+        DatasetCard,
         FORMATS,
         HfApi,
+        Template,
         datasets,
         load_daily_dilemmas,
         mo,
@@ -428,14 +431,66 @@ def _(
 
 
 @app.cell
-def _(config, datasets, hf_token, rows):
-    commit = datasets.Dataset.from_list(rows).push_to_hub(
+def _(Template):
+    # The dataset card's text; $model_id and $repo_id are filled in per run.
+    CARD = Template("""
+# j-faithfulness transcripts
+
+Transcripts of $model_id deciding forced-choice questions, for research on
+the faithfulness of model rationales with
+[j-faithfulness](https://github.com/logikon-ai/j-faithfulness).
+
+Each item has two rows. In the first, thinking is off: the question, the
+decision D, then "Explain." and the explanation E. In the second, thinking is
+on, with the reasoning R before D.
+
+| Field | Meaning |
+|---|---|
+| `id`, `q`, `options`, `domain` | the item; `options` is a list of `{label, action}` |
+| `source`, `source_revision` | the dataset the item comes from |
+| `r` | the text between the think tags; null with thinking off |
+| `d`, `d_probs` | the decision and P(D = option), in option order |
+| `e` | the explanation |
+| `metadata` | model and commit, transcript format, sampling, seed, caps |
+
+Each run replaces the contents in a new commit, so pin a revision:
+
+```python
+from datasets import load_dataset
+from j_faithfulness.items import row_transcript  # pip install git+https://github.com/logikon-ai/j-faithfulness
+
+rows = load_dataset("$repo_id", split="train", revision="<commit>")
+row_transcript(rows[0])  # the raw string the model saw
+```
+
+## License
+
+For research use. The licenses of the source datasets and models named in
+each row apply.
+""")
+    return (CARD,)
+
+
+@app.cell
+def _(CARD, DatasetCard, config, datasets, hf_token, rows):
+    datasets.Dataset.from_list(rows).push_to_hub(
         config["repo_id"],
         token=hf_token,
         private=True,
         commit_message=f"{len(rows) // 2} dev items from {config['model_id']}",
     )
-    # Consumers load the dataset at this revision.
+    # The card goes on top of the README push_to_hub wrote, keeping its YAML:
+    # the schema there feeds the dataset viewer.
+    card = DatasetCard.load(config["repo_id"], token=hf_token)
+    card.data.license = "other"
+    card.data.language = ["en"]
+    card.data.pretty_name = "j-faithfulness transcripts"
+    card.data.tags = ["faithfulness", "interpretability", "chain-of-thought"]
+    card.text = CARD.substitute(model_id=config["model_id"], repo_id=config["repo_id"])
+    commit = card.push_to_hub(
+        config["repo_id"], token=hf_token, commit_message="Dataset card"
+    )
+    # Consumers load the dataset at this revision: it holds the data and the card.
     commit.oid
     return
 
