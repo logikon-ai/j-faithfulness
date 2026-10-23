@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import jlens
 import torch
@@ -288,6 +289,44 @@ def read_out(
     )
 
 
+class Segments(NamedTuple):
+    """The units of a context with Q and R, by the text they sit in."""
+
+    q: list[list[int]]
+    before_r: list[list[int]]
+    r: list[list[int]]
+    after_r: list[list[int]]
+
+
+def segments(tokenizer, context: str, q: str, r: str) -> Segments:
+    """The units of ``context`` from Q on (see :func:`units`), split at Q's
+    and R's ends."""
+    q_start = context.index(q)
+    q_end = q_start + len(q)
+    r_start = context.index(r, q_end)
+    r_end = r_start + len(r)
+    return Segments(
+        q=units(tokenizer, context, q_start, end=q_end),
+        before_r=units(tokenizer, context, q_end, end=r_start),
+        r=units(tokenizer, context, r_start, Span(r_start, r_end), end=r_end),
+        after_r=units(tokenizer, context, r_end),
+    )
+
+
+def align_to_advisor(advisor: Segments, editor: Segments) -> list[list[int]]:
+    """The editor's units in the advisor's order (DESIGN.md, Two roles), so
+    the two read-outs are graded unit by unit. Q's and R's units pair one to
+    one. Each advisor unit between Q and R gets the editor's last unit before
+    R: both have read Q and nothing of R. The advisor's units after R get the
+    editor's last ones, which close the same template."""
+    if len(advisor.q) != len(editor.q) or len(advisor.r) != len(editor.r):
+        raise ValueError("Q or R splits into different units for the two roles")
+    if not editor.before_r or len(editor.after_r) < len(advisor.after_r):
+        raise ValueError("the editor's context has too few units around R")
+    after_r = editor.after_r[len(editor.after_r) - len(advisor.after_r) :]
+    return editor.q + [editor.before_r[-1]] * len(advisor.before_r) + editor.r + after_r
+
+
 def read_span(
     model: jlens.LensModel,
     lens: jlens.JacobianLens,
@@ -295,25 +334,33 @@ def read_span(
     kind: Kind,
     q: str,
     r: str | None = None,
-    role: str | None = None,
     *,
+    editor: bool = False,
     band: tuple[int, int],
 ) -> LatentReadout:
     """Read out J's span for ``kind`` (DESIGN.md, Latent readout, Span), unit
     by unit, from Q on: Q and the generation prompt up to R, or up to D,
-    with R's sentences as units if there is an R. ``role``: None for the
-    advisor, or another role such as ``fmt.EDIT_ROLE``. ``band``: the
-    model's, from :data:`LENSES`."""
+    with R's sentences as units if there is an R. ``editor``: read the copy
+    editor's context instead of the advisor's, with its units aligned to
+    the advisor's. ``band``: the model's, from :data:`LENSES`."""
     if kind == "reasoning":
-        context = fmt.reasoning_prompt(q, role)
+        context = fmt.reasoning_prompt(q, fmt.EDIT_ROLE if editor else None)
+    elif editor:
+        context = fmt.editor_prompt(q, r)
     else:
-        context = fmt.decision_prompt(q, r, role=role)
+        context = fmt.decision_prompt(q, r)
     start = context.index(q)
-    sentences = None
-    if kind == "explanation" and r is not None:
-        r_start = context.index(r, start + len(q))
-        sentences = Span(r_start, r_start + len(r))
-    span_units = units(model.tokenizer, context, start, sentences)
+    if kind == "explanation" and r is not None and editor:
+        span_units = align_to_advisor(
+            segments(model.tokenizer, fmt.decision_prompt(q, r), q, r),
+            segments(model.tokenizer, context, q, r),
+        )
+    else:
+        sentences = None
+        if kind == "explanation" and r is not None:
+            r_start = context.index(r, start + len(q))
+            sentences = Span(r_start, r_start + len(r))
+        span_units = units(model.tokenizer, context, start, sentences)
     readout = read_out(model, lens, context, band, units=span_units)
     readout.q_units = len(units(model.tokenizer, context, start, end=start + len(q)))
     return readout

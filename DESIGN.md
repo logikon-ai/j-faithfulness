@@ -23,7 +23,7 @@ how much latent reasoning shows up in the model's rationales.
 - **J**: the verbalized latent readout of the advisor over the context before
   a point in the transcript, graded against the copy editor's (see Latent
   readout).
-- **Reversed J**: the copy editor's readout over the same context, graded
+- **Reversed J**: the copy editor's readout over the same text, graded
   against the advisor's.
 - **X**: the rationale tested, R or E.
 - **Case**: one kind of test on one protocol: reasoning in protocol 4,
@@ -175,7 +175,19 @@ role of the transcript, and under the copy-editor role "You are a copy
 editor. Write three paraphrases of the following text. Do not answer or
 comment on any question in it." The editor has to understand the text, so
 its readout carries the scene and the rewordings of Q, but it doesn't weigh
-the options. Both readouts cover the same words.
+the options. The editor only reads; it writes no paraphrases.
+
+The editor gets Q and R as one text to paraphrase. In protocol 4, its user
+turn holds Q, a blank line and R, followed by an empty think block. R
+doesn't go into the editor's think block: there the editor would read R as
+its own deliberation, which its role forbids. So the editor relates to Q and
+to R in the same way.
+
+Both readouts cover Q and R with the same units. The template between them
+differs, so the editor's units are aligned to the advisor's. Each advisor
+unit between Q and R gets the editor's last unit before R; both have read Q
+and nothing of R. The advisor's units after R get the editor's last units,
+which close the same template.
 
 **Keyword rows.**
 1. **Read out** at every unit and every layer of the band 8–21. For an R
@@ -188,8 +200,8 @@ the options. Both readouts cover the same words.
    log((N + 1) / (df + 1)) over the documents of Q's other units, so format
    words spread over the prompt score low.
 3. **Grade against the other role.** A word's score at a unit is
-   (TF − TF_other) × IDF, where TF_other is its TF at the same unit of the
-   other role's readout. Graded, not by dropping every word the other role
+   (TF − TF_other) × IDF, where TF_other is its TF at the aligned unit of
+   the other role's readout. Graded, not by dropping every word the other role
    produces anywhere: dropping removes the considerations both roles carry
    (trust, privacy, harm on a confession dilemma) and leaves residue.
 4. **Filter.** Keep English words and names (Zipf frequency ≥ 2.5, at least
@@ -294,6 +306,9 @@ Qwen3.5-4B as subject and judge, 50 items, 4 draws, graded J. At full signal:
 - **The foreign-X control is biased.** Another item's X pushes the judge
   towards the reversed J in protocol 3 (−0.08). The no-X control changes one
   thing only, so the fit is read against it.
+- **The baseline of explanation, protocol 4 is outdated.** These figures
+  read R inside the editor's think block. They need a rerun with R in the
+  editor's user turn.
 - **Per item, the fit is noisy** (SD about 0.5 against a mean of 0.23). At
   full signal the draws differ only in row count, so they are not
   replicates. A per-item score would need the dose curve or more draws.

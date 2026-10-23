@@ -156,11 +156,6 @@ def tf_idf(readout: LatentReadout) -> list[dict[str, tuple[float, float]]]:
     return out
 
 
-def span_words(readout: LatentReadout) -> list[str]:
-    """The context token at each read-out position."""
-    return [readout.context_tokens[p] for p in readout.positions]
-
-
 def contrast(
     readout: LatentReadout, *baselines: LatentReadout
 ) -> list[dict[str, tuple[float, float]]]:
@@ -170,12 +165,13 @@ def contrast(
     the word explains it away. IDF is the read-out's own (see
     :func:`tf_idf`).
 
-    All read-outs must cover the same words (e.g. the same text under
-    different roles).
+    The read-outs must have their units in the same order, one to one. Their
+    words may differ: the copy editor reads R in the user turn, so its
+    template sits elsewhere (:func:`j_faithfulness.lens.align_to_advisor`).
     """
     for baseline in baselines:
-        if span_words(readout) != span_words(baseline):
-            raise ValueError("read-outs cover different words")
+        if len(baseline.positions) != len(readout.positions):
+            raise ValueError("read-outs have different numbers of units")
     base_tfs = [term_freqs(baseline) for baseline in baselines]
 
     def tf_base(u: int, word: str) -> float:

@@ -144,3 +144,13 @@ def test_baseline_is_the_same_text_under_the_editor_role():
     ours = QWEN35.transcript(Q, D, E, r=R)
     edit = QWEN35.transcript(Q, D, E, r=R, role=QWEN35.EDIT_ROLE)
     assert edit == ours.replace(QWEN35.ROLE, QWEN35.EDIT_ROLE, 1)
+
+
+def test_editor_reads_r_as_text_to_paraphrase():
+    assert QWEN35.editor_prompt("Q?", "R.") == (
+        f"<|im_start|>user\n{QWEN35.EDIT_ROLE}\n\nQ?\n\nR.<|im_end|>\n"
+        "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+    )
+    assert QWEN35.editor_prompt(Q) == QWEN35.decision_prompt(Q, role=QWEN35.EDIT_ROLE)
+    with pytest.raises(ValueError):
+        QWEN35.editor_prompt(Q, "")

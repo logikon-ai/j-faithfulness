@@ -134,7 +134,7 @@ def _(band, cases, fmt, lens, mo, model, read_span, verbalize):
         for _case in cases:
             _bar.update(increment=0, subtitle=f"{_case['id']}: {_case['kind']}")
             _args = (model, lens, fmt, _case["kind"], _case["q"], _case["r"])
-            editor = read_span(*_args, fmt.EDIT_ROLE, band=band)
+            editor = read_span(*_args, editor=True, band=band)
             advisor = read_span(*_args, band=band)
             # The same two read-outs, contrasted both ways. Graded, not by
             # subtraction: subtraction drops every word both roles produce,

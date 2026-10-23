@@ -195,9 +195,9 @@ def test_contrast_keeps_idf():
     assert unit_1["kind"] == pytest.approx((0.5, -0.5 * math.log(2)))
 
 
-def test_contrast_needs_the_same_words():
-    a = readout([["x"]], tokens=["Q"])
-    b = readout([["x"]], tokens=["P"])
+def test_contrast_needs_the_same_number_of_units():
+    a = readout([["x"]])
+    b = readout([["x"]], [["y"]])
     with pytest.raises(ValueError):
         contrast(a, b)
 

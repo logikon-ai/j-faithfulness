@@ -6,7 +6,10 @@ import torch
 from j_faithfulness import lens as lens_module
 from j_faithfulness.formats import Span
 from j_faithfulness.lens import (
+    Segments,
+    align_to_advisor,
     read_out,
+    segments,
     sentence_ids,
     skipped_tokens,
     top_per_unit,
@@ -83,6 +86,28 @@ def test_units():
         [4],
         [5],
     ]
+
+
+def test_segments():
+    context = "Hi. Q ab? <a> R ef. gh. </a> D"
+    # Tokens: Hi . _Q _ab ? _< a > | _R _ef . _gh . | _< / a > _D
+    got = segments(WordTokenizer(), context, " Q ab?", " R ef. gh.")
+    assert got == Segments(
+        q=[[2], [3], [4]],
+        before_r=[[5], [6], [7]],
+        r=[[8, 9, 10], [11, 12]],
+        after_r=[[13], [14], [15], [16], [17]],
+    )
+
+
+def test_align_to_advisor():
+    advisor = Segments([[0]], [[1], [2]], [[3]], [[4], [5]])
+    editor = Segments([[10]], [[11]], [[12]], [[13], [14], [15]])
+    assert align_to_advisor(advisor, editor) == [[10], [11], [11], [12], [14], [15]]
+    with pytest.raises(ValueError):
+        align_to_advisor(advisor, editor._replace(r=[]))
+    with pytest.raises(ValueError):
+        align_to_advisor(advisor, editor._replace(before_r=[]))
 
 
 def test_read_out_unit_takes_the_max_over_its_positions(tiny):

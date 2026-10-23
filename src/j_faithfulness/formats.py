@@ -37,7 +37,7 @@ class Spans:
 class TranscriptFormat(Protocol):
     """A model's raw-string transcripts. ``r=None`` means protocol 3, else
     protocol 4; protocol 2 is protocol 4 up to D. ``role=None`` means ROLE;
-    the baseline passes EDIT_ROLE."""
+    the baseline passes EDIT_ROLE, or reads :meth:`editor_prompt` up to D."""
 
     # Recorded in each dataset row; changes with any string the format puts
     # into a transcript, the roles included.
@@ -57,6 +57,11 @@ class TranscriptFormat(Protocol):
         role: str | None = None,
     ) -> str:
         """The transcript up to D: protocol 3, or protocol 2."""
+        ...
+
+    def editor_prompt(self, q: str, r: str | None = None) -> str:
+        """The copy editor's context up to D: Q and R as the text to
+        paraphrase."""
         ...
 
     def explanation_prompt(
@@ -174,6 +179,19 @@ class Qwen35Format:
                 raise ValueError("capped needs an R")
             return self.user_turn(q, role, thinking=False) + self.EMPTY_THINK
         return self.reasoning_prompt(q, role) + self.closed_reasoning(r, capped)
+
+    def editor_prompt(self, q: str, r: str | None = None) -> str:
+        """The copy editor's context up to D (DESIGN.md, Two roles): protocol
+        3 under EDIT_ROLE if ``r`` is None, else Q and R as one text in the
+        user turn, followed by an empty think block. In the think block the
+        editor would read R as its own deliberation, which its role forbids."""
+        if r is None:
+            return self.decision_prompt(q, role=self.EDIT_ROLE)
+        self.check_field("R", r)
+        if not r:
+            raise ValueError("R is empty")
+        user_turn = self.user_turn(f"{q}\n\n{r}", self.EDIT_ROLE, thinking=False)
+        return user_turn + self.EMPTY_THINK
 
     def explanation_prompt(
         self,
