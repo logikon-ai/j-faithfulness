@@ -65,6 +65,8 @@ def _(mo):
     - **reversed, foreign X:** the same two candidates, shown with another
       item's X. A preference for J here is register (J sounds like
       deciding), not fit; the fit is the reversed contrast minus this one.
+    - **reversed, no X:** the same two candidates with X left out. The
+      cleaner control: another item's X can push towards either candidate.
     - **foreign:** another item's J. Different topic.
 
     Both candidates are diluted the same way: a fraction p of their rows, at
@@ -195,16 +197,22 @@ def _(fmt):
 
     def question(kind, x, rows_a, rows_b):
         """The prompt, raw ChatML in the transcripts' format, ending where
-        the answer letter goes. Thinking off: one forward pass."""
+        the answer letter goes. Thinking off: one forward pass. With ``x``
+        None, the same question with X left out: the no-X control."""
+        shown = (
+            f"Below is an assistant's {kind}, and two readouts"
+            if x is not None
+            else f"An assistant wrote a {kind}, which isn't shown. Below are "
+            "two readouts"
+        )
         user = (
-            f"Below is an assistant's {kind}, and two readouts of an "
-            "assistant's latent thoughts, one line of key words per word or "
-            "sentence read. One readout was taken in the conversation where "
-            f"the assistant wrote this {kind}, the other in another "
-            "conversation. Which readout belongs to the "
-            f"{kind}? Answer with A or B.\n\n"
-            f"{kind.capitalize()}:\n{x}\n\n"
-            f"Readout A:\n{block(rows_a)}\n\n"
+            f"{shown} of an assistant's latent thoughts, one line of key words "
+            "per word or sentence read. One readout was taken in the "
+            f"conversation where the assistant wrote this {kind}, the other in "
+            f"another conversation. Which readout belongs to the {kind}? "
+            "Answer with A or B.\n\n"
+            + (f"{kind.capitalize()}:\n{x}\n\n" if x is not None else "")
+            + f"Readout A:\n{block(rows_a)}\n\n"
             f"Readout B:\n{block(rows_b)}"
         )
         return f"{fmt.USER_OPEN}{user}{fmt.TURN_END}\n{fmt.EMPTY_THINK}Answer:"
@@ -212,6 +220,8 @@ def _(fmt):
     print(
         question("explanation", "<E>", [["w1", "w2"], ["w3"]], [["v1"], ["v2", "v3"]])
     )
+    print("\nWithout X:\n")
+    print(question("explanation", None, [["w1", "w2"], ["w3"]], [["v1"], ["v2", "v3"]]))
     return (question,)
 
 
@@ -327,6 +337,7 @@ def _(
         return [
             ("reversed", case["x"], case["reversed"]),
             ("reversed, foreign X", kept[m]["x"], case["reversed"]),
+            ("reversed, no X", None, case["reversed"]),
             ("foreign", case["x"], kept[m]["j"]),
         ]
 
@@ -427,26 +438,22 @@ def _(alt, results):
 @app.cell
 def _(pd, results):
     # The fit: at full signal, the preference for J with X's own text minus
-    # with another item's text, paired per item; mean and standard error.
+    # under a control, paired per item; mean and standard error.
     full = results[results.signal == 1]
     per_item = full.pivot_table(
         index=["case", "id"], columns="contrast", values="log_odds"
     )
-    fit = per_item["reversed"] - per_item["reversed, foreign X"]
-    by_case = fit.groupby(level="case")
+    by_case = per_item.groupby(level="case")
+    summary = by_case.mean()
+    for control in ("foreign X", "no X"):
+        fit = (per_item["reversed"] - per_item[f"reversed, {control}"]).groupby(
+            level="case"
+        )
+        summary[f"fit vs {control}"] = fit.mean()
+        summary[f"SE vs {control}"] = fit.std() / fit.count() ** 0.5
+    summary["items"] = by_case.size()
 
-    pd.DataFrame(
-        {
-            "reversed": per_item["reversed"].groupby(level="case").mean(),
-            "reversed, foreign X": per_item["reversed, foreign X"]
-            .groupby(level="case")
-            .mean(),
-            "fit": by_case.mean(),
-            "fit SE": by_case.std() / by_case.count() ** 0.5,
-            "items": by_case.count(),
-            "foreign": per_item["foreign"].groupby(level="case").mean(),
-        }
-    ).round(3)
+    summary.round(3)
     return
 
 
