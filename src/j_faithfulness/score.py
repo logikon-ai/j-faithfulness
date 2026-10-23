@@ -1,5 +1,6 @@
 """The score (DESIGN.md, The score): teacher-forced log-probabilities of X's
-tokens under each arm of the probe, and Δ per token."""
+tokens under each arm of the probe, Δ per token, and ``assess``, which runs
+readout, J, probe and score for one transcript."""
 
 from __future__ import annotations
 
@@ -10,11 +11,18 @@ import torch
 from jlens.hooks import ActivationRecorder
 
 from j_faithfulness import replay
-from j_faithfulness.lens import MAX_SEQ_LEN
-
-# Positions unembedded at once: the logits over a 250k vocabulary are the
-# large tensor, not the forward pass.
-CHUNK = 512
+from j_faithfulness.formats import FORMATS, Kind
+from j_faithfulness.items import row_transcript
+from j_faithfulness.lens import (
+    BAND,
+    CHUNK,
+    MAX_SEQ_LEN,
+    read_span,
+    sentence_ids,
+    word_ends,
+)
+from j_faithfulness.probe import probe
+from j_faithfulness.verbalize import echoes, fence, verbalize_against
 
 
 @dataclass
@@ -74,22 +82,6 @@ def deltas(based: TokenLogprobs, not_based: TokenLogprobs) -> list[float]:
     return [a - b for a, b in zip(based.logprobs, not_based.logprobs, strict=True)]
 
 
-def sentence_ids(tokens: list[str]) -> list[int]:
-    """The sentence each token belongs to; a sentence ends with a token that
-    holds ``.``, ``?``, ``!`` or a line break (DESIGN.md, Units). Whitespace
-    after the end stays with the sentence, so a bare line break isn't a
-    sentence of its own."""
-    ids, sentence, ended = [], 0, False
-    for token in tokens:
-        if ended and token.strip():
-            sentence += 1
-            ended = False
-        ids.append(sentence)
-        if any(mark in token for mark in ".?!\n"):
-            ended = True
-    return ids
-
-
 def per_sentence(tokens: list[str], values: list[float]) -> list[float]:
     """Each token's value replaced by its sentence's mean: the profile."""
     ids = sentence_ids(tokens)
@@ -98,3 +90,73 @@ def per_sentence(tokens: list[str], values: list[float]) -> list[float]:
         totals.setdefault(sentence, []).append(value)
     means = {s: sum(v) / len(v) for s, v in totals.items()}
     return [means[s] for s in ids]
+
+
+def j_word_gap(
+    tokens: list[str], values: list[float], j_words: set[str]
+) -> float | None:
+    """Mean Δₜ on the tokens of X's words that are J's words or variants of
+    them (see :func:`echoes`), minus the mean on X's other tokens; None if
+    either set is empty (DESIGN.md, Does the model read J at all?)."""
+    on_j, off_j = [], []
+    start = 0
+    for end in word_ends(tokens):
+        word = "".join(tokens[start : end + 1]).strip()
+        voiced = word.isalpha() and echoes(word, j_words)
+        (on_j if voiced else off_j).extend(values[start : end + 1])
+        start = end + 1
+    if not on_j or not off_j:
+        return None
+    return sum(on_j) / len(on_j) - sum(off_j) / len(off_j)
+
+
+@dataclass
+class Assessment:
+    """One transcript's test: J's rows, X's tokens with Δₜ, Δ(X) and the
+    J-word gap. JSON-serializable via ``dataclasses.asdict``."""
+
+    id: str
+    protocol: int
+    kind: str
+    j: list[list[str]]
+    tokens: list[str]
+    deltas: list[float]
+    delta: float
+    j_word_gap: float | None
+
+
+def assess(
+    model: jlens.LensModel,
+    lens: jlens.JacobianLens,
+    row: dict,
+    kind: Kind,
+    band: tuple[int, int] = BAND,
+) -> Assessment:
+    """Test one transcript, given as a dataset row: read out J's span under
+    the advisor and the typist roles, verbalize J, probe X with J under IS
+    and is NOT, and score X under both."""
+    fmt = FORMATS[row["metadata"]["model_id"]]
+    transcript = row_transcript(row)
+    spans = fmt.parse(transcript)
+    q, r = row["q"], row["r"]
+    advisor = read_span(model, lens, fmt, kind, q, r, band=band)
+    typist = read_span(model, lens, fmt, kind, q, r, fmt.COPY_ROLE, band)
+    j = verbalize_against(advisor, typist)
+    based, not_based = (
+        x_logprobs(model, text, x.start)
+        for text, x in (
+            probe(transcript, spans, kind, fence(j), arm) for arm in (True, False)
+        )
+    )
+    values = deltas(based, not_based)
+    j_words = {w.casefold() for j_row in j for w in j_row.words}
+    return Assessment(
+        id=row["id"],
+        protocol=3 if row["r"] is None else 4,
+        kind=kind,
+        j=[j_row.words for j_row in j],
+        tokens=based.tokens,
+        deltas=values,
+        delta=sum(values) / len(values),
+        j_word_gap=j_word_gap(based.tokens, values, j_words),
+    )

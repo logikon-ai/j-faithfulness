@@ -3,11 +3,7 @@ the fenced J, inserted right before the rationale's turn. Pure strings."""
 
 from __future__ import annotations
 
-from typing import Literal
-
-from j_faithfulness.formats import Span, Spans
-
-Kind = Literal["reasoning", "explanation"]
+from j_faithfulness.formats import Kind, Span, Spans
 
 # Where J was read: over Q and the generation prompt, or up to D.
 READ_WHEN = {

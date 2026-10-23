@@ -27,9 +27,9 @@ def _():
 
     from j_faithfulness.formats import FORMATS
     from j_faithfulness.items import row_transcript
-    from j_faithfulness.lens import BAND, LENS_FILE, load, read_out
+    from j_faithfulness.lens import BAND, LENS_FILE, load, read_span
     from j_faithfulness.probe import probe
-    from j_faithfulness.score import deltas, per_sentence, x_logprobs
+    from j_faithfulness.score import assess, deltas, per_sentence, x_logprobs
     from j_faithfulness.verbalize import document, fence, verbalize_against
 
     return (
@@ -37,6 +37,7 @@ def _():
         FORMATS,
         LENS_FILE,
         alt,
+        assess,
         datasets,
         deltas,
         document,
@@ -45,7 +46,7 @@ def _():
         pd,
         per_sentence,
         probe,
-        read_out,
+        read_span,
         row_transcript,
         transformers,
         verbalize_against,
@@ -80,7 +81,7 @@ def _(datasets):
     print(f"[[Reasoning (R):]]\n{record['r']}\n")
     print(f"[[Decision (D):]]\n{record['d']}  ({d_probs})\n")
     print(f"[[Explanation (E):]]\n{record['e']}")
-    return MODEL_ID, record
+    return MODEL_ID, record, records
 
 
 @app.cell
@@ -169,7 +170,7 @@ def _(FORMATS, MODEL_ID, record):
 
     print("The transcript as the model reads it when acting as copy typist:\n")
     print(typist_context)
-    return fmt, typist_context
+    return (fmt,)
 
 
 @app.cell
@@ -218,14 +219,8 @@ def _(alt, document, pd):
 
 
 @app.cell
-def _(BAND, grid, lens, model, read_out, record, typist_context):
-    typist = read_out(
-        model,
-        lens,
-        typist_context,
-        BAND,
-        skip=typist_context[: typist_context.index(record["q"])],
-    )
+def _(BAND, fmt, grid, lens, model, read_span, record):
+    typist = read_span(model, lens, fmt, "reasoning", record["q"], role=fmt.COPY_ROLE)
 
     grid(typist, f"The lens's top words at each word of Q, layers {BAND[0]}–{BAND[1]}:")
     return (typist,)
@@ -237,18 +232,12 @@ def _(fmt, record):
 
     print("The transcript as the model reads it when acting as advisor:\n")
     print(advisor_context)
-    return (advisor_context,)
+    return
 
 
 @app.cell
-def _(BAND, advisor_context, grid, lens, model, read_out, record, typist):
-    advisor = read_out(
-        model,
-        lens,
-        advisor_context,
-        BAND,
-        skip=advisor_context[: advisor_context.index(record["q"])],
-    )
+def _(fmt, grid, lens, model, read_span, record, typist):
+    advisor = read_span(model, lens, fmt, "reasoning", record["q"])
 
     grid(
         advisor,
@@ -299,44 +288,104 @@ def _(deltas, model, probed, x_logprobs):
 
 
 @app.cell
-def _(
-    alt,
-    delta_r,
-    offsets,
-    per_sentence,
-    probed,
-    r_based,
-    spans,
-    strip,
-    tokenizer,
-    tokens,
-):
-    # The scored tokens are the last of the probed text; shift their offsets
-    # back into the transcript to find R's tokens there.
-    probed_text, probed_r = probed[True]
-    scored = tokenizer(probed_text, return_offsets_mapping=True)["offset_mapping"]
-    shift = probed_r.start - spans.r.start
-    delta_at = {
-        start - shift: delta
-        for (start, _), delta in zip(
-            scored[-len(delta_r) :],
-            per_sentence(r_based.tokens, delta_r),
-            strict=True,
+def _(alt, offsets, per_sentence, strip, tokenizer, tokens):
+    def profile_strip(probed_arm, x, logprobs, values, title):
+        """Δ per sentence of X on the whole transcript, X at span ``x``: red
+        where X is less likely when said to be based on J, blue where more."""
+        # The scored tokens are the last of the probed text; shift their
+        # offsets back into the transcript to find X's tokens there.
+        probed_text, probed_x = probed_arm
+        scored = tokenizer(probed_text, return_offsets_mapping=True)["offset_mapping"]
+        shift = probed_x.start - x.start
+        delta_at = {
+            start - shift: delta
+            for (start, _), delta in zip(
+                scored[-len(values) :],
+                per_sentence(logprobs.tokens, values),
+                strict=True,
+            )
+        }
+        profile = tokens.assign(value=[delta_at.get(start) for start, _ in offsets])
+        # Symmetric around 0, so the sign shows as red or blue.
+        reach = profile.value.abs().max()
+        return strip(
+            profile,
+            alt.Color(
+                "value:Q",
+                scale=alt.Scale(scheme="redblue", domain=[-reach, reach]),
+                title="Δ",
+            ),
+            title,
         )
-    }
-    profile = tokens.assign(value=[delta_at.get(start) for start, _ in offsets])
 
-    # Symmetric around 0, so the sign shows as red or blue.
-    reach = profile.value.abs().max()
-    strip(
-        profile,
-        alt.Color(
-            "value:Q",
-            scale=alt.Scale(scheme="redblue", domain=[-reach, reach]),
-            title="Δ",
-        ),
+    return (profile_strip,)
+
+
+@app.cell
+def _(delta_r, probed, profile_strip, r_based, spans):
+    profile_strip(
+        probed[True],
+        spans.r,
+        r_based,
+        delta_r,
         "Where in R the fit sits, sentence by sentence:",
     )
+    return
+
+
+@app.cell
+def _(fence, fmt, lens, model, read_span, record, verbalize_against):
+    e_typist = read_span(
+        model, lens, fmt, "explanation", record["q"], record["r"], fmt.COPY_ROLE
+    )
+    e_advisor = read_span(model, lens, fmt, "explanation", record["q"], record["r"])
+    j_explanation = verbalize_against(e_advisor, e_typist)
+
+    print("J right before the decision, read over Q and R:\n")
+    print(fence(j_explanation))
+    return (j_explanation,)
+
+
+@app.cell
+def _(
+    deltas,
+    fence,
+    j_explanation,
+    model,
+    probe,
+    profile_strip,
+    spans,
+    transcript,
+    x_logprobs,
+):
+    e_probed = [
+        probe(transcript, spans, "explanation", fence(j_explanation), based)
+        for based in (True, False)
+    ]
+    e_based, e_not_based = (x_logprobs(model, text, x.start) for text, x in e_probed)
+    delta_e = deltas(e_based, e_not_based)
+
+    profile_strip(
+        e_probed[0],
+        spans.e,
+        e_based,
+        delta_e,
+        f"E is {sum(delta_e) / len(delta_e):+.3f} nats per token more likely "
+        "when it is said to be based on J:",
+    )
+    return
+
+
+@app.cell
+def _(assess, lens, model, record, records):
+    record_p3 = next(
+        row for row in records if row["id"] == record["id"] and row["r"] is None
+    )
+    assessment = assess(model, lens, record_p3, "explanation")
+
+    print("Without thinking (protocol 3), all in one call:\n")
+    print("\n".join(", ".join(words) + "." for words in assessment.j))
+    print(f"\nΔ(E) = {assessment.delta:+.3f}, J-word gap = {assessment.j_word_gap}")
     return
 
 

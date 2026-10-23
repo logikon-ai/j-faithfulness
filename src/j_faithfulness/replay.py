@@ -42,11 +42,15 @@ def write(path: str, store: dict) -> None:
 
 def stand_in(model_id: str):
     """What ``load`` returns when replaying: a model that only knows its layer
-    count (from the config, no weights), and no lens."""
+    count (from the config, no weights) and its tokenizer, and no lens."""
     import transformers
 
     config = transformers.AutoConfig.from_pretrained(model_id)
-    return SimpleNamespace(n_layers=config.get_text_config().num_hidden_layers), None
+    model = SimpleNamespace(
+        n_layers=config.get_text_config().num_hidden_layers,
+        tokenizer=transformers.AutoTokenizer.from_pretrained(model_id),
+    )
+    return model, None
 
 
 def recorded(result_type):
@@ -63,8 +67,12 @@ def recorded(result_type):
                 return fn(*args, **kwargs)
             bound = signature.bind(*args, **kwargs)
             bound.apply_defaults()
+            # Arguments left at None stay out of the key, so a new optional
+            # argument keeps the earlier recordings valid.
             key_args = {
-                k: v for k, v in bound.arguments.items() if k not in ("model", "lens")
+                k: v
+                for k, v in bound.arguments.items()
+                if k not in ("model", "lens") and v is not None
             }
             digest = hashlib.sha256(json.dumps(key_args, sort_keys=True).encode())
             key = f"{fn.__name__}:{digest.hexdigest()[:16]}"

@@ -125,18 +125,22 @@ def tf_idf(readout: LatentReadout) -> list[dict[str, tuple[float, float]]]:
     """Per position: ``{word: (tf, idf)}``, each word in the form it has at
     its best rank there.
 
-    IDF is ``log((N + 1) / (df + 1))`` over the documents at the other
-    positions; with no other positions it is 1.
+    IDF is ``log((N + 1) / (df + 1))`` over the documents of Q's units (the
+    first ``readout.q_units``; None: all), the scored unit's own left out;
+    with no documents left it is 1. IDF from Q alone, so a consideration
+    that recurs across R's sentences isn't scored down, and R's denser merged
+    documents don't skew it (DESIGN.md, Keyword rows, step 2).
     """
-    # TODO: IDF from Q's units alone (DESIGN.md, Keyword rows, step 2), with
-    # R's sentence units when the explanation readout is built.
     docs = [[document(ranked) for ranked in layers] for layers in readout.top]
-    df = Counter(key for layers in docs for d in layers for key in d)
-    n = sum(len(layers) for layers in docs)
+    idf_rows = readout.q_units
+    base = docs if idf_rows is None else docs[:idf_rows]
+    df = Counter(key for layers in base for d in layers for key in d)
+    n = sum(len(layers) for layers in base)
     out = []
-    for layers, tfs in zip(docs, term_freqs(readout), strict=True):
-        own = Counter(key for d in layers for key in d)
-        n_rest = n - len(layers)
+    for row, (layers, tfs) in enumerate(zip(docs, term_freqs(readout), strict=True)):
+        in_base = idf_rows is None or row < idf_rows
+        own = Counter(key for d in layers for key in d) if in_base else Counter()
+        n_rest = n - len(layers) if in_base else n
         out.append(
             {
                 word: (

@@ -104,6 +104,20 @@ def test_tf_idf_leaves_out_the_scored_position():
     assert pos1["euro"] == pytest.approx((0.5, math.log(3 / 1)))
 
 
+def test_tf_idf_over_q_alone():
+    q0 = [["the", "Italy"]]
+    q1 = [["the", "euro"]]
+    r_sentence = [["Italy", "the"]]
+    r = readout(q0, q1, r_sentence)
+    r.q_units = 2
+    tfs = tf_idf(r)
+    # Q's units score against Q's other unit: 1 document.
+    assert tfs[0]["Italy"] == pytest.approx((0.5, math.log(2 / 1)))
+    # R's sentence scores against both of Q's units, R itself left out.
+    assert tfs[2]["Italy"] == pytest.approx((1.0, math.log(3 / 2)))
+    assert tfs[2]["the"] == pytest.approx((0.5, math.log(3 / 3)))
+
+
 def test_tf_idf_single_position_is_plain_tf():
     (pos,) = tf_idf(readout([["Italy", "boot"]]))
     assert pos == {"Italy": (1.0, 1.0), "boot": (0.5, 1.0)}

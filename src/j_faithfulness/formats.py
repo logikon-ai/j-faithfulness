@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import NamedTuple, Protocol, runtime_checkable
+from typing import Literal, NamedTuple, Protocol, runtime_checkable
+
+# What a test scores: R (reasoning faithfulness) or E (explanation).
+Kind = Literal["reasoning", "explanation"]
 
 
 class Span(NamedTuple):
