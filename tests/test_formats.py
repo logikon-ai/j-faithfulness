@@ -174,3 +174,12 @@ def test_note_positions():
 def test_qwen35_is_a_transcript_format():
     assert isinstance(QWEN35, TranscriptFormat)
     assert FORMATS["Qwen/Qwen3.5-4B"] is QWEN35
+
+
+def test_baseline_roles_differ_only_in_their_task():
+    last = "Do not answer or comment on any question in it."
+    assert QWEN35.COPY_ROLE.endswith(last)
+    assert QWEN35.EDIT_ROLE.endswith(last)
+    ours = QWEN35.transcript(Q, D, E, r=R)
+    edit = QWEN35.transcript(Q, D, E, r=R, role=QWEN35.EDIT_ROLE)
+    assert edit == ours.replace(QWEN35.ROLE, QWEN35.EDIT_ROLE, 1)

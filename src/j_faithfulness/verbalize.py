@@ -5,9 +5,11 @@ At a position, a word scores TF × IDF: TF sums its reciprocal ranks over the
 layers, and IDF counts the documents at the other positions that contain it,
 so a concept that persists through the layers doesn't raise its own count.
 
-Against a baseline read-out of the same Q under another task (the contrastive
-read-out, PLAN.md M1), a word instead scores its TF here against its TF at the
-same word of the baseline.
+Against baseline read-outs of the same text under other roles (DESIGN.md,
+Latent readout, Keyword rows, step 4), J is built one of two ways: graded,
+where a word's TF at a unit is reduced by its highest TF at the same unit of
+any baseline (:func:`contrast`); or by subtraction, where every word of a
+baseline's J is dropped from J wherever it occurs (:func:`verbalize_against`).
 """
 
 from __future__ import annotations
@@ -17,7 +19,6 @@ import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass
-from typing import Literal
 
 from wordfreq import zipf_frequency
 
@@ -161,45 +162,47 @@ def span_words(readout: LatentReadout) -> list[str]:
 
 
 def contrast(
-    readout: LatentReadout,
-    baseline: LatentReadout,
-    measure: Literal["diff", "ratio"] = "diff",
-    smoothing: float = 0.1,
+    readout: LatentReadout, *baselines: LatentReadout
 ) -> list[dict[str, tuple[float, float]]]:
-    """Per position: ``{word: (tf, score)}``, scoring TF here against TF at
-    the same word of ``baseline`` (0 where the word isn't in its top tokens):
-    their difference, or ``log((tf + smoothing) / (tf_base + smoothing))``.
+    """Per unit: ``{word: (tf, score)}``, the score ``(tf - tf_base) × idf``.
+    ``tf_base`` is the word's highest TF at the same unit of any baseline (0
+    where it isn't among a baseline's top tokens): one baseline that carries
+    the word explains it away. IDF is the read-out's own (see
+    :func:`tf_idf`).
 
-    Both read-outs must cover the same words (e.g. Q under two task
-    prefixes).
+    All read-outs must cover the same words (e.g. the same text under
+    different roles).
     """
-    if span_words(readout) != span_words(baseline):
-        raise ValueError("read-outs cover different words")
-    out = []
-    for tfs, base in zip(term_freqs(readout), term_freqs(baseline), strict=True):
-        scored = {}
-        for key, (t, word) in tfs.items():
-            b = base.get(key, (0.0, ""))[0]
-            if measure == "diff":
-                scored[word] = (t, t - b)
-            else:
-                scored[word] = (t, math.log((t + smoothing) / (b + smoothing)))
-        out.append(scored)
-    return out
+    for baseline in baselines:
+        if span_words(readout) != span_words(baseline):
+            raise ValueError("read-outs cover different words")
+    base_tfs = [term_freqs(baseline) for baseline in baselines]
+
+    def tf_base(u: int, word: str) -> float:
+        return max(
+            (b[u].get(word.casefold(), (0.0,))[0] for b in base_tfs), default=0.0
+        )
+
+    return [
+        {
+            word: (tf, (tf - tf_base(u, word)) * idf)
+            for word, (tf, idf) in scored.items()
+        }
+        for u, scored in enumerate(tf_idf(readout))
+    ]
 
 
 def verbalize(
     readout: LatentReadout,
-    baseline: LatentReadout | None = None,
-    measure: Literal["diff", "ratio"] = "diff",
+    baselines: list[LatentReadout] | None = None,
     k: int = 5,
     min_tf: float = 1.0,
     min_score: float = 1.0,
     min_zipf: float = 2.5,
 ) -> J:
     """J: per position, up to ``k`` words by TF × IDF, best first; positions
-    left without words are omitted. With a ``baseline``, words score by
-    :func:`contrast` instead.
+    left without words are omitted. With ``baselines``, words score by the
+    graded :func:`contrast` instead.
 
     A word needs TF ≥ ``min_tf`` (so rare garbage isn't boosted by its IDF)
     and a score ≥ ``min_score``. Left out are words of the context and their
@@ -213,13 +216,13 @@ def verbalize(
     def keep(w: str) -> bool:
         return not echoes(w, context_words) and is_latin(w) and is_english(w, min_zipf)
 
-    if baseline is None:
+    if baselines:
+        scores = contrast(readout, *baselines)
+    else:
         scores = [
             {w: (tf, tf * idf) for w, (tf, idf) in scored.items()}
             for scored in tf_idf(readout)
         ]
-    else:
-        scores = contrast(readout, baseline, measure)
     j = []
     for position, scored in zip(readout.positions, scores, strict=True):
         ranked = sorted(
@@ -250,16 +253,17 @@ def subtract(j: J, baseline: J, k: int) -> J:
 
 def verbalize_against(
     readout: LatentReadout,
-    baseline: LatentReadout,
+    *baselines: LatentReadout,
     k: int = 10,
     loose_k: int = 50,
     loose_min_tf: float = 0.5,
 ) -> J:
-    """J of ``readout`` minus every word of ``baseline``'s J (see
-    :func:`subtract`), both built loose (``loose_k`` words per position, TF ≥
+    """J of ``readout`` minus every word of each baseline's J (see
+    :func:`subtract`), all built loose (``loose_k`` words per position, TF ≥
     ``loose_min_tf``), then up to ``k`` words per position."""
     loose = {"k": loose_k, "min_tf": loose_min_tf}
-    return subtract(verbalize(readout, **loose), verbalize(baseline, **loose), k)
+    seen = [row for baseline in baselines for row in verbalize(baseline, **loose)]
+    return subtract(verbalize(readout, **loose), seen, k)
 
 
 def fence(j: J) -> str:

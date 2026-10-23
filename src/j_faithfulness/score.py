@@ -22,7 +22,7 @@ from j_faithfulness.lens import (
     word_ends,
 )
 from j_faithfulness.probe import probe
-from j_faithfulness.verbalize import echoes, fence, verbalize_against
+from j_faithfulness.verbalize import Row, echoes, fence, verbalize_against
 
 
 @dataclass
@@ -130,30 +130,37 @@ def assess(
     row: dict,
     kind: Kind,
     band: tuple[int, int] = BAND,
+    j: list[list[str]] | None = None,
 ) -> Assessment:
     """Test one transcript, given as a dataset row: read out J's span under
-    the advisor and the typist roles, verbalize J, probe X with J under IS
-    and is NOT, and score X under both."""
+    the advisor and the editor roles, verbalize J, probe X with J under IS
+    and is NOT, and score X under both.
+
+    With ``j`` (J's rows of words, e.g. another item's), no read-out runs and
+    X is probed with that J: the mismatched-J control.
+    """
     fmt = FORMATS[row["metadata"]["model_id"]]
     transcript = row_transcript(row)
     spans = fmt.parse(transcript)
-    q, r = row["q"], row["r"]
-    advisor = read_span(model, lens, fmt, kind, q, r, band=band)
-    typist = read_span(model, lens, fmt, kind, q, r, fmt.COPY_ROLE, band)
-    j = verbalize_against(advisor, typist)
+    if j is None:
+        q, r = row["q"], row["r"]
+        advisor = read_span(model, lens, fmt, kind, q, r, band=band)
+        editor = read_span(model, lens, fmt, kind, q, r, fmt.EDIT_ROLE, band)
+        j = [j_row.words for j_row in verbalize_against(advisor, editor)]
+    block = fence([Row(i, words) for i, words in enumerate(j)])
     based, not_based = (
         x_logprobs(model, text, x.start)
         for text, x in (
-            probe(transcript, spans, kind, fence(j), arm) for arm in (True, False)
+            probe(transcript, spans, kind, block, arm) for arm in (True, False)
         )
     )
     values = deltas(based, not_based)
-    j_words = {w.casefold() for j_row in j for w in j_row.words}
+    j_words = {w.casefold() for words in j for w in words}
     return Assessment(
         id=row["id"],
         protocol=3 if row["r"] is None else 4,
         kind=kind,
-        j=[j_row.words for j_row in j],
+        j=j,
         tokens=based.tokens,
         deltas=values,
         delta=sum(values) / len(values),
@@ -202,4 +209,48 @@ def j_word_gaps(assessments: list[Assessment]) -> dict[str, dict[str, float]]:
             "n": len(gaps),
             "dropped": len(group) - len(gaps),
         }
+    return out
+
+
+def mismatched(assessments: list[Assessment]) -> list[list[list[str]]]:
+    """For each assessment, the J of the next item in the same case (the last
+    takes the first's): the mismatched J it is scored against in the
+    control."""
+    next_j = {}
+    for group in by_case(assessments).values():
+        for i, a in enumerate(group):
+            next_j[case(a), a.id] = group[(i + 1) % len(group)].j
+    return [next_j[case(a), a.id] for a in assessments]
+
+
+def against_control(
+    own: list[Assessment], control: list[Assessment]
+) -> dict[str, dict[str, float]]:
+    """Per case, paired by item: Δ and the J-word gap with the item's own J
+    minus with the control's J, as mean, standard error, t and the number of
+    pairs. Both > 0 if the model reads J's content, not just the note
+    (DESIGN.md, Does the model read J at all?)."""
+    controls = {(case(b), b.id): b for b in control}
+    out = {}
+    for name, group in by_case(own).items():
+        stats: dict[str, float] = {}
+        for measure in ("delta", "j_word_gap"):
+            diffs = []
+            for a in group:
+                ours, theirs = (getattr(x, measure) for x in (a, controls[name, a.id]))
+                if ours is not None and theirs is not None:
+                    diffs.append(ours - theirs)
+            mean = statistics.fmean(diffs) if diffs else float("nan")
+            se = (
+                statistics.stdev(diffs) / len(diffs) ** 0.5
+                if len(diffs) > 1
+                else float("nan")
+            )
+            stats |= {
+                f"{measure} own − control": mean,
+                f"{measure} se": se,
+                f"{measure} t": mean / se if se else float("nan"),
+                f"{measure} n": len(diffs),
+            }
+        out[name] = stats
     return out

@@ -18,12 +18,12 @@ caption. A cell whose caption needs more than one sentence does too much.
 
 ## J for reasoning (Verbalizing latent thoughts)
 
-5. "The transcript as the model reads it when acting as copy typist:" — the reasoning prompt under the typist role.
+5. "The transcript as the model reads it when acting as copy editor:" — the reasoning prompt under the editor role.
 6. *(no output)* — the grid helper: words × layers, the best word-like token per cell; with a baseline, words it lacks in red.
-7. "The lens's top words at each word of Q, layers 8–21:" — read out under the typist role → the grid.
+7. "The lens's top words at each word of Q, layers 8–21:" — read out under the editor role → the grid.
 8. "The transcript as the model reads it when acting as advisor:" — the reasoning prompt.
-9. "The same text, read to decide it; in red, words the typist's read-out lacks:" — read out under the advisor role → the grid against the typist's.
-10. "What deciding adds over retyping, as J:" — TF × IDF, filter, subtract the baseline → the fenced `<latentthought>` block.
+9. "The same text, read to decide it; in red, words the editor's read-out lacks:" — read out under the advisor role → the grid against the editor's.
+10. "What deciding adds over paraphrasing, as J:" — TF × IDF, filter, subtract the baseline → the fenced `<latentthought>` block.
 
 ## Probe and score: reasoning
 
@@ -44,6 +44,9 @@ caption. A cell whose caption needs more than one sentence does too much.
 19. "Δ per case and domain, mean over items:" — heatmap.
 20. "Does the model read J? The spread of Δ per case:" — `spread` → n, mean, std, min, max per case.
 21. "Does the model read J? Δ on J's words minus Δ on other tokens ({k} transcripts without a J word in X left out):" — the gap per transcript, its mean per case in red.
+22. "Scored {n} transcripts against another item's J." — `assess` with the next item's J in the same case (`mismatched`); saved to `assessments-mismatched.json`.
+23. "Does the model read J's content? Own J minus another item's J:" — `against_control` → per case, Δ and the J-word gap own minus control, with standard error and t.
+24. "J-word gap with the item's own J minus with another item's J:" — the paired difference per transcript, its mean per case in red.
 
 ## Open choices
 

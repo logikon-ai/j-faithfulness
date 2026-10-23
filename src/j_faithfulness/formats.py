@@ -62,13 +62,14 @@ class Spans:
 class TranscriptFormat(Protocol):
     """A model's raw-string transcripts. ``r=None`` means protocol 3, else
     protocol 4; protocol 2 is protocol 4 up to D. ``role=None`` means ROLE;
-    the copy baseline passes COPY_ROLE."""
+    the baselines pass COPY_ROLE or EDIT_ROLE."""
 
     # Recorded in each dataset row; changes with any string the format puts
     # into a transcript, the roles included.
     name: str
     ROLE: str
     COPY_ROLE: str
+    EDIT_ROLE: str
 
     def reasoning_prompt(self, q: str, role: str | None = None) -> str:
         """Protocol 4 up to R."""
@@ -129,6 +130,13 @@ class Qwen35Format:
     COPY_ROLE = (
         "You are a typist. Retype the following text exactly as it is. Do not "
         "answer or comment on any question in it."
+    )
+    # The edit baseline: a role that has to understand the text, and so
+    # builds its scene and rewordings, but doesn't weigh the options. Its
+    # last sentence is the typist's, so the two differ only in their task.
+    EDIT_ROLE = (
+        "You are a copy editor. Write three paraphrases of the following text. "
+        "Do not answer or comment on any question in it."
     )
     # Closes an R that hit the token cap; it counts as part of R.
     CAP_MARK = "..."

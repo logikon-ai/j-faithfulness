@@ -3,6 +3,7 @@ DailyDilemmas adapter."""
 
 from __future__ import annotations
 
+import ast
 import csv
 import random
 from dataclasses import dataclass
@@ -93,9 +94,21 @@ def daily_dilemmas(rows: list[dict]) -> list[Item]:
     return items
 
 
-def load_daily_dilemmas(token: str | None = None) -> list[Item]:
-    """All 1,360 dilemmas, from a pinned revision of the dataset. ``token``:
-    an HF token; None falls back to HF_TOKEN or a cached login."""
+def daily_dilemmas_values(rows: list[dict]) -> dict[str, list[str]]:
+    """The annotated values of each dilemma's two options, by item id, in
+    order and with repeats removed: a reference for what J should surface."""
+    values: dict[str, list[str]] = {}
+    for row in rows:
+        found = values.setdefault(f"dd-{row['dilemma_idx']}", [])
+        for value in ast.literal_eval(row["values_aggregated"]):
+            if value not in found:
+                found.append(value)
+    return values
+
+
+def daily_dilemmas_rows(token: str | None = None) -> list[dict]:
+    """The rows of the dataset's file, from a pinned revision. ``token``: an
+    HF token; None falls back to HF_TOKEN or a cached login."""
     from huggingface_hub import hf_hub_download
 
     path = hf_hub_download(
@@ -106,7 +119,12 @@ def load_daily_dilemmas(token: str | None = None) -> list[Item]:
         token=token,
     )
     with open(path, newline="", encoding="utf-8") as f:
-        return daily_dilemmas(list(csv.DictReader(f)))
+        return list(csv.DictReader(f))
+
+
+def load_daily_dilemmas(token: str | None = None) -> list[Item]:
+    """All 1,360 dilemmas, from a pinned revision of the dataset."""
+    return daily_dilemmas(daily_dilemmas_rows(token))
 
 
 def split(

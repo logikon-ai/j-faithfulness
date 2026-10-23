@@ -34,10 +34,12 @@ def _():
     from j_faithfulness.lens import BAND, LENS_FILE, load, read_span
     from j_faithfulness.probe import probe
     from j_faithfulness.score import (
+        against_control,
         assess,
         case,
         deltas,
         j_word_gaps,
+        mismatched,
         per_sentence,
         spread,
         x_logprobs,
@@ -48,6 +50,7 @@ def _():
         BAND,
         FORMATS,
         LENS_FILE,
+        against_control,
         alt,
         assess,
         case,
@@ -59,6 +62,7 @@ def _():
         j_word_gaps,
         json,
         load,
+        mismatched,
         mo,
         pd,
         per_sentence,
@@ -184,10 +188,10 @@ def _(LENS_FILE, MODEL_ID, load):
 @app.cell
 def _(FORMATS, MODEL_ID, record):
     fmt = FORMATS[MODEL_ID]
-    typist_context = fmt.reasoning_prompt(record["q"], role=fmt.COPY_ROLE)
+    editor_context = fmt.reasoning_prompt(record["q"], role=fmt.EDIT_ROLE)
 
-    print("The transcript as the model reads it when acting as copy typist:\n")
-    print(typist_context)
+    print("The transcript as the model reads it when acting as copy editor:\n")
+    print(editor_context)
     return (fmt,)
 
 
@@ -238,10 +242,10 @@ def _(alt, document, pd):
 
 @app.cell
 def _(BAND, fmt, grid, lens, model, read_span, record):
-    typist = read_span(model, lens, fmt, "reasoning", record["q"], role=fmt.COPY_ROLE)
+    editor = read_span(model, lens, fmt, "reasoning", record["q"], role=fmt.EDIT_ROLE)
 
-    grid(typist, f"The lens's top words at each word of Q, layers {BAND[0]}–{BAND[1]}:")
-    return (typist,)
+    grid(editor, f"The lens's top words at each word of Q, layers {BAND[0]}–{BAND[1]}:")
+    return (editor,)
 
 
 @app.cell
@@ -254,22 +258,22 @@ def _(fmt, record):
 
 
 @app.cell
-def _(fmt, grid, lens, model, read_span, record, typist):
+def _(fmt, grid, lens, model, read_span, record, editor):
     advisor = read_span(model, lens, fmt, "reasoning", record["q"])
 
     grid(
         advisor,
-        "The same text, read to decide it; in red, words the typist's read-out lacks:",
-        typist,
+        "The same text, read to decide it; in red, words the editor's read-out lacks:",
+        editor,
     )
     return (advisor,)
 
 
 @app.cell
-def _(advisor, fence, typist, verbalize_against):
-    j_reasoning = verbalize_against(advisor, typist)
+def _(advisor, fence, editor, verbalize_against):
+    j_reasoning = verbalize_against(advisor, editor)
 
-    print("What deciding adds over retyping, as J:\n")
+    print("What deciding adds over paraphrasing, as J:\n")
     print(fence(j_reasoning))
     return (j_reasoning,)
 
@@ -357,11 +361,11 @@ def _(delta_r, probed, profile_strip, r_based, spans):
 
 @app.cell
 def _(fence, fmt, lens, model, read_span, record, verbalize_against):
-    e_typist = read_span(
-        model, lens, fmt, "explanation", record["q"], record["r"], fmt.COPY_ROLE
+    e_editor = read_span(
+        model, lens, fmt, "explanation", record["q"], record["r"], fmt.EDIT_ROLE
     )
     e_advisor = read_span(model, lens, fmt, "explanation", record["q"], record["r"])
-    j_explanation = verbalize_against(e_advisor, e_typist)
+    j_explanation = verbalize_against(e_advisor, e_editor)
 
     print("J right before the decision, read over Q and R:\n")
     print(fence(j_explanation))
@@ -456,7 +460,7 @@ def _(MODEL_ID, assess, case, dataclasses, json, lens, mo, model, pd, records):
     )
 
     mo.ui.table(results, label=f"{len(item_ids)} items × 3 cases assessed:")
-    return assessments, results
+    return assessments, cases, results
 
 
 @app.cell
@@ -514,6 +518,58 @@ def _(alt, assessments, j_word_gaps, results):
     ).encode(x=alt.X("j_word_gap:Q", title="J-word gap"), y=alt.Y("case:N", title=None))
     gaps.mark_tick(opacity=0.5) + gaps.mark_tick(color="crimson", thickness=3).encode(
         x="mean(j_word_gap):Q"
+    )
+    return
+
+
+@app.cell
+def _(assess, assessments, cases, dataclasses, json, lens, mismatched, mo, model):
+    # The control: each X probed with the next item's J. No read-outs run.
+    controls = []
+    with mo.status.progress_bar(total=len(cases), title="Control") as _bar:
+        for (_row, _kind), _j in zip(cases, mismatched(assessments), strict=True):
+            controls.append(assess(model, lens, _row, _kind, j=_j))
+            _bar.update()
+    with open("assessments-mismatched.json", "w") as _f:
+        json.dump([dataclasses.asdict(a) for a in controls], _f)
+
+    mo.md(f"Scored {len(controls)} transcripts against another item's J.")
+    return (controls,)
+
+
+@app.cell
+def _(against_control, assessments, controls, mo, pd):
+    mo.ui.table(
+        pd.DataFrame(against_control(assessments, controls))
+        .T.round(4)
+        .reset_index(names="case"),
+        label="Does the model read J's content? Own J minus another item's J:",
+    )
+    return
+
+
+@app.cell
+def _(alt, assessments, case, controls, pd):
+    paired = pd.DataFrame(
+        [
+            {
+                "case": case(a),
+                "id": a.id,
+                "gap difference": a.j_word_gap - b.j_word_gap,
+            }
+            for a, b in zip(assessments, controls, strict=True)
+            if a.j_word_gap is not None and b.j_word_gap is not None
+        ]
+    )
+    pairs = alt.Chart(
+        paired,
+        title="J-word gap with the item's own J minus with another item's J:",
+    ).encode(
+        x=alt.X("gap difference:Q", title="gap difference"),
+        y=alt.Y("case:N", title=None),
+    )
+    pairs.mark_tick(opacity=0.5) + pairs.mark_tick(color="crimson", thickness=3).encode(
+        x="mean(gap difference):Q"
     )
     return
 

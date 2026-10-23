@@ -5,6 +5,7 @@ from j_faithfulness.items import (
     DAILY_DILEMMAS,
     Item,
     daily_dilemmas,
+    daily_dilemmas_values,
     from_row,
     row_transcript,
     split,
@@ -35,6 +36,14 @@ def test_daily_dilemmas():
     assert item.actions == {"A": "Report", "B": "Not report"}
     assert item.domain == "work"
     assert item.source == DAILY_DILEMMAS
+
+
+def test_daily_dilemmas_values():
+    rows = [
+        {**row("55", "to_do", "Report"), "values_aggregated": "['honesty', 'duty']"},
+        {**row("55", "not_to_do", "No"), "values_aggregated": "['loyalty', 'duty']"},
+    ]
+    assert daily_dilemmas_values(rows) == {"dd-55": ["honesty", "duty", "loyalty"]}
 
 
 def test_row_round_trip():

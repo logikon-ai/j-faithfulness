@@ -6,10 +6,12 @@ import torch
 from j_faithfulness.score import (
     Assessment,
     TokenLogprobs,
+    against_control,
     assess,
     deltas,
     j_word_gap,
     j_word_gaps,
+    mismatched,
     per_sentence,
     spread,
     x_logprobs,
@@ -77,8 +79,8 @@ def test_assess(tiny_with_offsets, r, kind):
     dataclasses.asdict(a)
 
 
-def assessment(kind, protocol, delta, gap):
-    return Assessment("dd-1", protocol, kind, [], [], [], delta, gap)
+def assessment(kind, protocol, delta, gap, item="dd-1", j=()):
+    return Assessment(item, protocol, kind, list(j), [], [], delta, gap)
 
 
 def test_model_level_checks():
@@ -96,3 +98,48 @@ def test_model_level_checks():
         {"mean": 0.2, "n": 1, "dropped": 1}
     )
     assert gaps["explanation, protocol 3"]["mean"] == pytest.approx(0.1)
+
+
+def test_mismatched_takes_the_next_items_j_in_the_same_case():
+    own = [
+        assessment("reasoning", 4, 0, 0, "dd-1", [["a"]]),
+        assessment("explanation", 3, 0, 0, "dd-1", [["x"]]),
+        assessment("reasoning", 4, 0, 0, "dd-2", [["b"]]),
+        assessment("reasoning", 4, 0, 0, "dd-3", [["c"]]),
+    ]
+    assert mismatched(own) == [[["b"]], [["x"]], [["c"]], [["a"]]]
+
+
+def test_against_control_pairs_by_item():
+    own = [
+        assessment("reasoning", 4, 0.0, 0.3, "dd-1"),
+        assessment("reasoning", 4, -0.1, None, "dd-2"),
+        assessment("reasoning", 4, 0.1, 0.2, "dd-3"),
+    ]
+    control = [
+        assessment("reasoning", 4, -0.1, 0.0, "dd-3"),
+        assessment("reasoning", 4, -0.2, 0.1, "dd-1"),
+        assessment("reasoning", 4, -0.2, 0.1, "dd-2"),
+    ]
+    stats = against_control(own, control)["reasoning, protocol 4"]
+    # Δ differences 0.2, 0.1, 0.2; gap differences 0.2, 0.2 (dd-2 drops out).
+    assert stats["delta own − control"] == pytest.approx(0.5 / 3)
+    assert stats["j_word_gap own − control"] == pytest.approx(0.2)
+    assert stats["j_word_gap n"] == 2
+
+
+def test_assess_with_a_given_j_reads_nothing(tiny_with_offsets, monkeypatch):
+    model, lens = tiny_with_offsets
+    monkeypatch.setattr(
+        "j_faithfulness.score.read_span", lambda *a, **k: pytest.fail("read out")
+    )
+    row = {
+        "id": "dd-1",
+        "q": "Tell her? A) Yes B) No. Answer with A or B only.",
+        "r": None,
+        "d": "A",
+        "e": "She wants to know.",
+        "metadata": {"model_id": "Qwen/Qwen3.5-4B", "format": "qwen3.5/1"},
+    }
+    a = assess(model, lens, row, "explanation", j=[["want", "know"]])
+    assert a.j == [["want", "know"]]

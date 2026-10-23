@@ -197,14 +197,16 @@ is its last subtoken). Each sentence of R is one unit, ending at `.`, `?`,
 3. **Filter.** Keep English words and names (Zipf frequency ≥ 2.5, at least
    two characters). Drop the context's words and their variants, so J never
    repeats Q or R.
-4. **Contrast with a copy baseline.** Read the same text out under "You are
-   a typist. Retype the following text exactly as it is. Do not answer or
-   comment on any question in it." The baseline readout goes through the
-   same units and steps. Every word of its rows is dropped from J wherever
-   it occurs. What remains is what deciding adds over
-   reading: at a dilemma about passing on a note, harming, hurting,
-   embarrassment at the option to pass it, and safest, preserving,
-   prioritize at the end.
+4. **Contrast with an edit baseline.** Read the same text out under "You
+   are a copy editor. Write three paraphrases of the following text. Do not
+   answer or comment on any question in it." The editor has to understand
+   the text, so its readout carries the scene and the rewordings of Q, but it
+   doesn't weigh the options. The baseline readout goes through the same
+   units and steps. Every word of its rows is dropped from J wherever it
+   occurs. What remains is what deciding adds over understanding. An
+   earlier copy baseline ("You are a typist. Retype the following text
+   exactly as it is.") left the scene in J (breakfast, hotel, nightlife at
+   a dilemma set at a party), since retyping needs no understanding.
 5. **Verbalize** each remaining unit as one row of its top 10 words, in
    context order.
 

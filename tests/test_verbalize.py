@@ -171,17 +171,30 @@ def test_fence():
     assert fence(j) == "<latentthought>\na, b.\nc.\n</latentthought>"
 
 
-def test_contrast_diff_and_ratio():
+def test_contrast_is_graded_by_the_strongest_baseline():
     decide = readout([["fair", "Answer"], ["fair", "honest"]])
     copy = readout([["Answer", "fair"], ["text"]])
-    # fair: tf 1 + 1 here, 1/2 in copy; Answer: 1/2 vs 1; honest: 1/2 vs 0.
-    (diff,) = contrast(decide, copy)
-    assert diff == pytest.approx(
+    edit = readout([["honest"], ["text"]])
+    # One unit, so IDF is 1. fair: tf 1 + 1 here, 1/2 in copy, 0 in edit;
+    # Answer: 1/2 vs 1; honest: 1/2 vs 0 in copy, 1 in edit.
+    (copy_only,) = contrast(decide, copy)
+    assert copy_only == pytest.approx(
         {"fair": (2, 1.5), "Answer": (0.5, -0.5), "honest": (0.5, 0.5)}
     )
-    (ratio,) = contrast(decide, copy, "ratio", smoothing=0.5)
-    assert ratio["fair"] == pytest.approx((2, math.log(2.5 / 1)))
-    assert ratio["honest"] == pytest.approx((0.5, math.log(1 / 0.5)))
+    (both,) = contrast(decide, copy, edit)
+    assert both == pytest.approx(
+        {"fair": (2, 1.5), "Answer": (0.5, -0.5), "honest": (0.5, -0.5)}
+    )
+
+
+def test_contrast_keeps_idf():
+    decide = readout([["fair"]], [["fair", "kind"]])
+    copy = readout([["text"]], [["kind"]])
+    # At unit 1, fair is in the other unit's document: idf log(2/2) = 0.
+    # kind: tf 1/2 vs 1 in copy, idf log(2/1).
+    _, unit_1 = contrast(decide, copy)
+    assert unit_1["fair"] == pytest.approx((1, 0))
+    assert unit_1["kind"] == pytest.approx((0.5, -0.5 * math.log(2)))
 
 
 def test_contrast_needs_the_same_words():
@@ -194,12 +207,13 @@ def test_contrast_needs_the_same_words():
 def test_verbalize_against_a_baseline():
     decide = readout([["Answer", "fair"]], [["Answer", "kind"]])
     copy = readout([["Answer"]], [["Answer"]])
-    # Answer is as strong in copy: diff 0. fair and kind: tf 1/2, diff 1/2.
-    assert verbalize(decide, copy, min_tf=0.5, min_score=0.5) == [
+    # Answer is as strong in copy: score 0. fair and kind: tf 1/2, not in
+    # copy, idf log(2/1): score 0.35.
+    assert verbalize(decide, [copy], min_tf=0.5, min_score=0.3) == [
         Row(0, ["fair"]),
         Row(1, ["kind"]),
     ]
-    assert verbalize(decide, copy, min_tf=0.5, min_score=0.6) == []
+    assert verbalize(decide, [copy], min_tf=0.5, min_score=0.4) == []
 
 
 def test_subtract_drops_baseline_words_anywhere():
@@ -218,3 +232,6 @@ def test_verbalize_against():
     copy = readout([["kind"], ["kind"]], [["answers"], ["answers"]])
     # kinder and Answer are variants of baseline words.
     assert verbalize_against(decide, copy) == [Row(0, ["fair"])]
+    # A second baseline drops what it carries, too.
+    edit = readout([["fair"], ["fair"]], [["text"], ["text"]])
+    assert verbalize_against(decide, copy, edit) == []
