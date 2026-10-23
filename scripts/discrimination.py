@@ -28,14 +28,12 @@ def _():
     import marimo as mo
     import pandas as pd
     import torch
-    from jlens.hooks import ActivationRecorder
 
     from j_faithfulness.formats import FORMATS
     from j_faithfulness.lens import MAX_SEQ_LEN, load, read_span
-    from j_faithfulness.verbalize import fence, verbalize_against
+    from j_faithfulness.verbalize import fence, verbalize
 
     return (
-        ActivationRecorder,
         FORMATS,
         MAX_SEQ_LEN,
         alt,
@@ -48,7 +46,7 @@ def _():
         random,
         read_span,
         torch,
-        verbalize_against,
+        verbalize,
     )
 
 
@@ -59,10 +57,10 @@ def _(mo):
 
     The model sees X (R or E) and two readouts, and answers A or B: one
     forward pass per question. The right candidate is X's own J: the
-    advisor's read-out minus the copy editor's, what deciding adds. Three
-    contrasts for the wrong one:
+    advisor's read-out graded against the copy editor's, what deciding
+    adds. Three contrasts for the wrong one:
 
-    - **reversed:** the editor's read-out minus the advisor's, what
+    - **reversed:** the editor's read-out graded against the advisor's, what
       paraphrasing adds. Same item, same tokens, same topic.
     - **reversed, foreign X:** the same two candidates, shown with another
       item's X. A preference for J here is register (J sounds like
@@ -126,7 +124,7 @@ def _(FORMATS, MODEL_ID, load):
 
 
 @app.cell
-def _(cases, fmt, lens, mo, model, read_span, verbalize_against):
+def _(cases, fmt, lens, mo, model, read_span, verbalize):
     read = []
     with mo.status.progress_bar(total=len(cases), title="Read out") as _bar:
         for _case in cases:
@@ -134,12 +132,14 @@ def _(cases, fmt, lens, mo, model, read_span, verbalize_against):
             _args = (model, lens, fmt, _case["kind"], _case["q"], _case["r"])
             editor = read_span(*_args, fmt.EDIT_ROLE)
             advisor = read_span(*_args)
-            # The same two read-outs, subtracted both ways.
+            # The same two read-outs, contrasted both ways. Graded, not by
+            # subtraction: subtraction drops every word both roles produce,
+            # the item's core considerations among them, from both J's.
             read.append(
                 {
                     **_case,
-                    "j": verbalize_against(advisor, editor),
-                    "reversed": verbalize_against(editor, advisor),
+                    "j": verbalize(advisor, baselines=[editor]),
+                    "reversed": verbalize(editor, baselines=[advisor]),
                 }
             )
             _bar.update()
@@ -243,27 +243,63 @@ def _(random):
 
 
 @app.cell
-def _(ActivationRecorder, MAX_SEQ_LEN, model, torch):
+def _(MAX_SEQ_LEN, mo, model, torch):
+    # Prompts per batch, and padded tokens per batch: a cap on both keeps a
+    # batch of long R's within memory.
+    BATCH_SIZE = 64
+    BATCH_TOKENS = 65536
+
+    # The HF model inside the lens wrapper: its forward takes no attention
+    # mask, which left padding needs. Left-padded batches are how D was
+    # computed for this model (scripts/generate_transcripts.py).
+    hf_model = model._hf_model
+    tokenizer = model.tokenizer
+
     letters = {}
     for _letter in "AB":
-        _ids = model.tokenizer.encode(f" {_letter}", add_special_tokens=False)
+        _ids = tokenizer.encode(f" {_letter}", add_special_tokens=False)
         assert len(_ids) == 1, f"' {_letter}' is not one token"
         letters[_letter] = _ids[0]
 
-    final_layer = model.n_layers - 1
+    def batches(prompts):
+        """Distinct prompts, shortest first, in batches within both caps:
+        similar lengths waste little padding."""
+        lengths = {
+            prompt: len(ids)
+            for prompt, ids in zip(prompts, tokenizer(prompts).input_ids, strict=True)
+        }
+        if max(lengths.values()) >= MAX_SEQ_LEN:
+            raise ValueError(f"a prompt reaches MAX_SEQ_LEN={MAX_SEQ_LEN} tokens")
+        batch: list[str] = []
+        for prompt in sorted(lengths, key=lengths.get):
+            longest = lengths[prompt]
+            if batch and (
+                len(batch) == BATCH_SIZE or (len(batch) + 1) * longest > BATCH_TOKENS
+            ):
+                yield batch
+                batch = []
+            batch.append(prompt)
+        if batch:
+            yield batch
 
     @torch.no_grad()
-    def log_odds_a(prompt):
-        """log P(A) − log P(B) for the next token. Through the lens wrapper,
-        as score.x_logprobs does, so the model is loaded once."""
-        ids = model.encode(prompt, max_length=MAX_SEQ_LEN)
-        if ids.shape[-1] >= MAX_SEQ_LEN:
-            raise ValueError(f"prompt reaches MAX_SEQ_LEN={MAX_SEQ_LEN} tokens")
-        with ActivationRecorder(model.layers, at=[final_layer]) as recorder:
-            model.forward(ids)
-            last = recorder.activations[final_layer][0, -1:]
-        logits = model.unembed(last)[0].float()
-        return float(logits[letters["A"]] - logits[letters["B"]])
+    def log_odds_a(prompts):
+        """``{prompt: log P(A) − log P(B)}`` for the next token after each
+        prompt; a prompt that occurs twice is run once (at p = 1 both orders
+        are the same prompt)."""
+        distinct = list(dict.fromkeys(prompts))
+        out = {}
+        with mo.status.progress_bar(total=len(distinct), title="Ask") as bar:
+            for batch in batches(distinct):
+                enc = tokenizer(
+                    batch, return_tensors="pt", padding=True, padding_side="left"
+                ).to(hf_model.device)
+                logits = hf_model(**enc, use_cache=False, logits_to_keep=1).logits
+                last = logits[:, -1].float()
+                diffs = last[:, letters["A"]] - last[:, letters["B"]]
+                out.update(zip(batch, diffs.tolist(), strict=True))
+                bar.update(increment=len(batch))
+        return out
 
     return (log_odds_a,)
 
@@ -277,7 +313,6 @@ def _(
     json,
     kept,
     log_odds_a,
-    mo,
     question,
     random,
 ):
@@ -295,50 +330,45 @@ def _(
             ("foreign", case["x"], kept[m]["j"]),
         ]
 
+    # All questions first, then one batched pass over them.
     trials = []
-    _total = len(kept) * DRAWS * len(DOSES) * 3
-    with mo.status.progress_bar(total=_total, title="Ask") as _bar:
-        for _i, _case in enumerate(kept):
-            label = f"{_case['kind']}, protocol {_case['protocol']}"
-            others = [i for i in groups[_case["kind"], _case["protocol"]] if i != _i]
-            pairs = random.Random(_i).sample(
-                [(m, k) for m in others for k in others if m != k],
-                min(DRAWS, len(others) * (len(others) - 1)),
-            )
-            for _draw, (m, k) in enumerate(pairs):
-                for contrast, x, other in contrasts(_case, m):
-                    for p in DOSES:
-                        _bar.update(
-                            increment=0,
-                            subtitle=f"{_case['id']} {label}, {contrast}, p = {p}",
-                        )
-                        right, wrong = diluted(
-                            _case["j"], other, kept[k]["j"], p, f"{_i} {_draw}"
-                        )
-                        right_first = log_odds_a(
-                            question(_case["kind"], x, right, wrong)
-                        )
-                        right_second = -log_odds_a(
-                            question(_case["kind"], x, wrong, right)
-                        )
-                        trials.append(
-                            {
-                                "id": _case["id"],
-                                "case": label,
-                                "contrast": contrast,
-                                "other": kept[m]["id"],
-                                "filler": kept[k]["id"],
-                                "p": p,
-                                "rows": len(right),
-                                "right_first": right_first,
-                                "right_second": right_second,
-                            }
-                        )
-                        _bar.update()
+    for _i, _case in enumerate(kept):
+        others = [i for i in groups[_case["kind"], _case["protocol"]] if i != _i]
+        pairs = random.Random(_i).sample(
+            [(m, k) for m in others for k in others if m != k],
+            min(DRAWS, len(others) * (len(others) - 1)),
+        )
+        for _draw, (m, k) in enumerate(pairs):
+            for contrast, x, other in contrasts(_case, m):
+                for p in DOSES:
+                    right, wrong = diluted(
+                        _case["j"], other, kept[k]["j"], p, f"{_i} {_draw}"
+                    )
+                    trials.append(
+                        {
+                            "id": _case["id"],
+                            "case": f"{_case['kind']}, protocol {_case['protocol']}",
+                            "contrast": contrast,
+                            "other": kept[m]["id"],
+                            "filler": kept[k]["id"],
+                            "p": p,
+                            "rows": len(right),
+                            "first": question(_case["kind"], x, right, wrong),
+                            "second": question(_case["kind"], x, wrong, right),
+                        }
+                    )
+
+    scores = log_odds_a([t[order] for t in trials for order in ("first", "second")])
+    for _t in trials:
+        _t["right_first"] = scores[_t.pop("first")]
+        _t["right_second"] = -scores[_t.pop("second")]
     with open(OUT, "w") as _f:
         json.dump({"cases": kept, "trials": trials}, _f)
 
-    print(f"Asked {2 * len(trials)} questions; wrote them and the J's to {OUT}.")
+    print(
+        f"Asked {len(scores)} distinct questions for {len(trials)} trials; "
+        f"wrote them and the J's to {OUT}."
+    )
     return (trials,)
 
 
