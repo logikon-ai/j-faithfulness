@@ -28,8 +28,6 @@ def _():
     import datasets
     import marimo as mo
     import pandas as pd
-    import torch
-    import transformers
 
     from j_faithfulness.formats import FORMATS
     from j_faithfulness.items import row_transcript
@@ -53,8 +51,6 @@ def _():
         random,
         read_span,
         row_transcript,
-        torch,
-        transformers,
         verbalize_against,
         words,
         x_logprobs,
@@ -67,17 +63,14 @@ def _(mo):
     # Does the score fall as J loses the latent content?
 
     J's rows are swapped, at fraction p, for the rows of a contrast J, at
-    matched length. Three contrasts:
+    matched length. Two contrasts:
 
     - **role:** read over the same tokens (the advisor's own Q and R) under a
       devil's-advocate role: same topic, different stance.
-    - **opposite:** read over a newly sampled R after which the model chooses
-      the other option. Only for explanation in protocol 4: elsewhere J is
-      read before any R, so it doesn't depend on the choice.
     - **foreign:** the next item's J: different topic. The reference curve.
 
-    A score that measures more than topic falls with p against role and
-    opposite, not only against foreign.
+    A score that measures more than topic falls with p against role, not
+    only against foreign.
 
     Two scores per J′: Δ under the IS/NOT probe, and the first-person frame,
     log P(X | J′) − log P(X | empty J), per token.
@@ -104,7 +97,7 @@ def _(datasets):
         for kind in (("reasoning", "explanation") if row["r"] else ("explanation",))
     ]
     print(f"{len(item_ids)} items, {len(cases)} cases")
-    return DOSES, MODEL_ID, OUT, cases, rows
+    return DOSES, MODEL_ID, OUT, cases
 
 
 @app.cell
@@ -121,69 +114,6 @@ def _(FORMATS, MODEL_ID, load):
 
 
 @app.cell
-def _(MODEL_ID, cases, fmt, mo, torch, transformers):
-    # Samples per item; enough when P(other option) after a fresh R is ≳ 0.1.
-    N_SAMPLES = 16
-    R_SAMPLING = {"temperature": 1.0, "top_p": 0.95, "top_k": 20, "min_p": 0.0}
-
-    # A second copy of the model for generate: jlens's wrapper doesn't
-    # generate. 4B in bf16 fits twice.
-    hf_model = transformers.AutoModelForCausalLM.from_pretrained(
-        MODEL_ID, dtype=torch.bfloat16
-    ).cuda()
-    tokenizer = transformers.AutoTokenizer.from_pretrained(MODEL_ID)
-    think_end = tokenizer.convert_tokens_to_ids("</think>")
-    stops = [think_end, tokenizer.eos_token_id]
-
-    @torch.no_grad()
-    def decision(q, r, capped, labels):
-        enc = tokenizer(fmt.decision_prompt(q, r, capped), return_tensors="pt")
-        logits = hf_model(**enc.to(hf_model.device), logits_to_keep=1).logits[0, -1]
-        ids = tokenizer.convert_tokens_to_ids(labels)
-        return labels[int(logits[ids].argmax())]
-
-    @torch.no_grad()
-    def opposite_r(row):
-        """A sampled R after which the model chooses another option than the
-        recorded D, as stored (cap mark included); None if no sample does."""
-        labels = [o["label"] for o in row["options"]]
-        cap = row["metadata"].get("r_cap", 2048)
-        enc = tokenizer(fmt.reasoning_prompt(row["q"]), return_tensors="pt")
-        out = hf_model.generate(
-            **enc.to(hf_model.device),
-            do_sample=True,
-            **R_SAMPLING,
-            max_new_tokens=cap,
-            num_return_sequences=N_SAMPLES,
-            eos_token_id=stops,
-            pad_token_id=tokenizer.pad_token_id,
-        )
-        for ids in out[:, enc.input_ids.shape[-1] :].tolist():
-            end = next((k for k, t in enumerate(ids) if t in stops), None)
-            text = tokenizer.decode(ids[:end], skip_special_tokens=False)
-            capped = end is None or ids[end] != think_end
-            r = text if capped else text.removesuffix("\n")
-            if r and decision(row["q"], r, capped, labels) != row["d"]:
-                return r + fmt.CAP_MARK if capped else r
-        return None
-
-    opposite = {}
-    p4 = [row for row, kind in cases if row["r"] and kind == "explanation"]
-    with mo.status.progress_bar(total=len(p4), title="Sample R") as _bar:
-        for _row in p4:
-            _bar.update(increment=0, subtitle=_row["id"])
-            opposite[_row["id"]] = opposite_r(_row)
-            _bar.update()
-
-    found = [i for i, r in opposite.items() if r is not None]
-    print(
-        f"An R with the other choice for {len(found)} of {len(p4)} items "
-        f"({N_SAMPLES} samples each): {', '.join(found)}"
-    )
-    return (opposite,)
-
-
-@app.cell
 def _(
     DEVIL_ROLE,
     cases,
@@ -191,7 +121,6 @@ def _(
     lens,
     mo,
     model,
-    opposite,
     read_span,
     verbalize_against,
 ):
@@ -212,15 +141,6 @@ def _(
                 "own": verbalize_against(advisor, editor),
                 "devil": verbalize_against(devil, editor),
             }
-            r_other = opposite.get(row["id"]) if kind == "explanation" and r else None
-            if r_other is not None:
-                other_editor = read_span(
-                    model, lens, fmt, kind, q, r_other, fmt.EDIT_ROLE
-                )
-                other_advisor = read_span(model, lens, fmt, kind, q, r_other)
-                js[case_key(row, kind)]["opposite"] = verbalize_against(
-                    other_advisor, other_editor
-                )
             bar.update()
 
     print(f"Read out {len(js)} cases under three roles.")
@@ -358,16 +278,10 @@ def _(
             transcript = row_transcript(_row)
             spans = FORMATS[_row["metadata"]["model_id"]].parse(transcript)
             empty = mean_logprob(model, transcript, spans, _kind, [])
-            # The opposite J is read over another R, so its rows don't stand
-            # at the advisor's positions: aligned by index, like the foreign J.
-            contrasts = [
+            for contrast, other, by_position in (
                 ("role", js[key]["devil"], True),
-                ("opposite", js[key].get("opposite"), False),
                 ("foreign", foreign[key], False),
-            ]
-            for contrast, other, by_position in contrasts:
-                if not other:
-                    continue
+            ):
                 own_rows, other_rows = aligned(js[key]["own"], other, by_position)
                 order = swap_order(f"{key} {contrast}", len(own_rows))
                 for p in DOSES:
