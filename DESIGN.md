@@ -8,11 +8,11 @@ Jacobian lens and verbalize it as keyword rows, J. Show a judge model a
 rationale X and two readouts: X's own J, and a readout of the same tokens
 taken under a role that paraphrases instead of deciding. Ask which readout
 belongs to X. If the judge picks J more often when it sees X than when it
-sees another item's rationale, X carries the trace that deciding left in the
-model's latent state.
-Averaged over many items, that preference is a model-level measure of
-activity-faithfulness: how far the model's rationales show that it
-deliberated on the item, not yet what it weighed (see Construct).
+sees another item's rationale, X responds to the deliberation in the model's
+latent state.
+Averaged over many items, that preference is a model-level measure of how
+far the model's rationales respond to its latent deliberation (see
+Construct).
 
 
 ## Terms
@@ -22,10 +22,15 @@ deliberated on the item, not yet what it weighed (see Construct).
 - **R**: the ex-ante rationale, the thinking trace between the think tags.
 - **D**: the decision, the answer token after `</think>\n\n`.
 - **E**: the ex-post rationale, the reply to a follow-up turn "Explain."
-- **J**: the verbalized latent readout of the advisor over the context before
-  a point in the transcript, graded against the copy editor's (see Latent
-  readout).
-- **Reversed J**: the copy editor's readout over the same text, graded
+- **Advisor role**: the role of the transcript, "You are an advisor. Decide
+  the following question." The subject model writes R, D and E under it.
+- **Contrast role**: a role that reads the same text as the advisor without
+  deciding it. So far it is the copy editor.
+- **Deliberation residual**: what the advisor's latent state holds beyond the
+  contrast role's over the same text.
+- **J**: the deliberation residual over the context before a point in the
+  transcript, verbalized as keyword rows (see Latent readout).
+- **Reversed J**: the contrast role's readout over the same text, graded
   against the advisor's.
 - **X**: the rationale tested, R or E.
 - **Case**: one kind of test on one protocol: reasoning in protocol 4,
@@ -36,30 +41,29 @@ deliberated on the item, not yet what it weighed (see Construct).
 
 ## Construct
 
-**Local faithfulness.** Within one transcript, does a rationale express the
-latent reasoning behind it?
+**The norm.** Within one transcript, a rationale should respond to the
+latent deliberation behind it. R should respond to the deliberation over Q,
+with which the model starts to think. E should respond to the deliberation
+over Q and R that led to D. For a System-2 reasoner this follows from the
+requirement that prior latent thought is relevant evidence and must not be
+ignored. R may revise or reject what the latent deliberation weighed, but it
+takes it up. An R that doesn't respond is either fake, with the form of
+reasoning but not its work, or it reasons from scratch.
 
-- **Reasoning faithfulness (ex-ante).** R reflects the latent reasoning with
-  which the model starts to think about Q.
-- **Explanation faithfulness (ex-post).** E reflects the latent reasoning that
-  led to D.
+**The grain.** The contrast role sets the grain of the deliberation
+residual, and so what responding is tested. With the copy editor as
+contrast, the residual is what deciding adds over understanding: everything
+deliberative, however the reasons are weighed. At this grain, the test asks
+whether X responds to the fact that a deliberation on its item took place,
+not to how it went. Sharper contrasts test whether X responds to the
+specific deliberation (see Next).
 
-"Reflects" means recoverable: X is faithful to the extent that a judge can
-tell X's own J from a contrast readout better with X in view than with
-another item's rationale. The judge needs no access to the subject's latent state. It compares
-two texts: X and a list of keywords.
-
-**Two grades.** The contrast readout sets what faithfulness is tested:
-- **Activity-faithfulness.** X carries the latent trace of deliberating on
-  its item, as opposed to understanding it. The contrast is the same item
-  read under a role that understands but doesn't decide.
-- **Content-faithfulness.** X carries which considerations the deliberation
-  weighed. The contrast is a deliberation on a nearby item that weighs other
-  ones.
-
-**Scope.** j-faithfulness measures activity-faithfulness. Content-faithfulness
-needs a counterfactual deliberation on the same item, which no contrast here
-supplies (see Next).
+**j-faithfulness.** j-faithfulness operationalizes responsiveness to latent
+deliberation. X is j-faithful to the extent that a judge can tell X's own J
+from a contrast readout better with X in view than with another item's
+rationale. The judge needs no access to the subject's latent state. It
+compares two texts: X and a list of keywords. The test doesn't establish
+that X depends causally on the latent deliberation.
 
 **What the test isolates.** Two confounds would make the task trivial, and
 each has its control:
@@ -72,8 +76,9 @@ each has its control:
   general; the fit is what X adds over it.
 
 J and the reversed J differ in the activity, deliberating or paraphrasing,
-not in the considerations weighed. So the fit measures activity-faithfulness.
-That X identifies its item and states D is no confound at this grade: that
+not in the considerations weighed. So the fit measures responsiveness at the
+editor's grain.
+That X identifies its item and states D is no confound at this grain: that
 J is a deliberation on X's item, leaning to X's decision, is the trace
 tested.
 
@@ -192,9 +197,10 @@ subtoken. Each sentence of R is one unit, ending at `.`, `?`, `!` or a line
 break.
 
 **Two roles over the same text.** The span is read twice: under the advisor
-role of the transcript, and under the copy-editor role "You are a copy
-editor. Write three paraphrases of the following text. Do not answer or
-comment on any question in it." The editor has to understand the text, so
+role of the transcript, and under the contrast role, the copy editor: "You
+are a copy editor. Write three paraphrases of the following text. Do not
+answer or comment on any question in it." The editor has to understand the
+text, so
 its readout carries the scene and the rewordings of Q, but it doesn't weigh
 the options. The editor only reads; it writes no paraphrases.
 
@@ -280,7 +286,7 @@ what is shown as X:
 | Contrast | Wrong candidate | Shown | What it measures |
 |---|---|---|---|
 | foreign | another item's J | X | topic and more: the calibration |
-| reversed | X's reversed J | X | activity-faithfulness: fit beyond topic |
+| reversed | X's reversed J | X | responsiveness: fit beyond topic |
 | reversed, foreign X | X's reversed J | another item's X | register: the control |
 
 Other items come from the same case, so all candidates were read the same
@@ -325,9 +331,9 @@ reading R as text. At full signal:
 | explanation, protocol 4 | 1.15 | 0.32 | 0.07 | +0.25 ± 0.06 | 78% / 56% |
 | reasoning, protocol 4 | 0.52 | 0.09 | 0.02 | +0.07 ± 0.03 | 73% / 53% |
 
-- **Explanations are activity-faithful.** The fit is about 7 standard
-  errors above 0 in protocol 3 and 4 in protocol 4, and the reversed
-  contrast rises with the signal.
+- **Explanations respond to the latent deliberation.** The fit is about 7
+  standard errors above 0 in protocol 3 and 4 in protocol 4, and the
+  reversed contrast rises with the signal.
 - **It is a fraction of the topic effect.** Most of what makes J
   recognizable against a foreign J is topic.
 - **Reasoning shows a small fit,** about 2.6 standard errors above 0. The
@@ -348,29 +354,29 @@ reading R as text. At full signal:
 
 - **Faithful to J, not to everything.** J is a lossy keyword readout. Latent
   reasoning that J misses can't count either way.
-- **Activity, not content.** The fit shows that X carries the trace of
-  deliberating on its item. It doesn't show that X names the considerations
-  the deliberation weighed.
+- **Coarse grain.** The fit shows that X responds to a deliberation on its
+  item having taken place. It doesn't show that X responds to how the
+  deliberation weighed its considerations.
 - **One direction.** The test asks whether J shows up in X. It doesn't ask
   whether X claims considerations that played no part.
 - **No unfaithful condition.** No condition here is built to make X
   unfaithful, so the design shows no case where the fit drops.
-- **Consistency, not causation.** J is what deciding adds over paraphrasing.
-  Nothing here shows that it caused D.
+- **Consistency, not causation.** The fit shows that X matches the
+  deliberation residual, not that X depends on it. Nor does anything here
+  show that the residual caused D.
 - **Relative numbers.** The fit depends on the question, the judge and how J
   is built. It is read in comparison: across cases, conditions and models.
 
 
 ## Next
 
-1. **Content-faithfulness.** The wrong candidate is J′, read over a
-   perturbed Q′: Q moderately changed by an added option, stake or fact.
-   J′ shares J's register, its activity and most of its topic, so only the
-   considerations weighed can separate them. J and J′ are both filtered
-   against the words of Q and Q′ together; otherwise only J can hold the
-   words Q′ adds. A change that moves neither D nor `d_probs` may leave J′
-   close to J, so the size of the change is measured by the shift in
-   `d_probs`. It gives a dose axis next to dilution.
+1. **Sharper contrasts.** A contrast role that deliberates in part leaves a
+   finer deliberation residual, which tests whether X responds to the
+   specific deliberation. Two advocates, each charged to produce as many
+   arguments as it can for one side, leave what weighing adds over
+   producing arguments: comparing, balancing and resolving them. Roles
+   bound to one method of deciding, such as maximizing expected utility,
+   are further candidates.
 2. **A fixed judge.** A large model from another family, such as a
    Gemma 4 or a Mistral model, as judge on the 4B's data. This tests
    whether the null for reasoning comes from the small judge, and shows how
