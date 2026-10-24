@@ -79,10 +79,10 @@ each has its control:
 
 J and the reversed J differ in the activity, deliberating or paraphrasing,
 not in the considerations weighed. So the fit measures responsiveness at the
-editor's grain.
-That X identifies its item and states D is no confound at this grain: that
+contrast role's grain.
+(That X identifies its item and states D is no confound at this grain: that
 J is a deliberation on X's item, leaning to X's decision, is the trace
-tested.
+tested.)
 
 **Out of scope:** decisions that don't route through the J-space (the
 [jlens paper](https://transformer-circuits.pub/2026/workspace/index.html)
@@ -175,7 +175,7 @@ The current cache is `ggbetz/cached-reasoning-records` with Qwen3.5-4B on
 dev items of DailyDilemmas.
 
 
-## Latent readout
+## Latent readout of the deliberation residual
 
 The [Jacobian lens](https://github.com/anthropics/jacobian-lens) decodes a
 residual-stream vector at any (layer, position) into a ranked vocabulary
@@ -201,7 +201,7 @@ subtoken. Each sentence of R is one unit, ending at `.`, `?`, `!` or a line
 break.
 
 **Two roles over the same text.** The span is read twice: under the advisor
-role of the transcript, and under the contrast role, the copy editor: "You
+role of the transcript, and under the contrast role, e.g. the copy editor: "You
 are a copy editor. Write three paraphrases of the following text. Do not
 answer or comment on any question in it." The editor has to understand the
 text, so
@@ -230,7 +230,7 @@ which close the same template.
    document. TF at a unit sums 1/(rank + 1) over the band. IDF is
    log((N + 1) / (df + 1)) over the documents of Q's other units, so format
    words spread over the prompt score low.
-3. **Grade against the other role.** A word's score at a unit is
+3. **Grade against the contrast role.** A word's score at a unit is
    (TF − TF_other) × IDF, where TF_other is its TF at the aligned unit of
    the other role's readout. Graded, not by dropping every word the other role
    produces anywhere: dropping removes the considerations both roles carry
@@ -241,9 +241,9 @@ which close the same template.
 5. **Verbalize** each remaining unit as one row of its top 5 words, in
    context order.
 
-**J** grades the advisor's readout against the editor's: what deciding adds.
-**Reversed J** grades the editor's against the advisor's: what paraphrasing
-adds. Both come from the same two readouts.
+**J** grades the advisor's readout against the contrast role's: what deciding adds.
+**Reversed J** grades the contrast role's against the advisor's: what 
+paraphrasing adds. Both come from the same two readouts.
 
 ```
 <latentthought>
@@ -343,11 +343,6 @@ reading R as text. At full signal:
 - **Reasoning shows a small fit,** about 2.6 standard errors above 0. The
   reasoning J is read over Q alone, R is long, and the judge is small; the
   data can't tell which of these keeps it small.
-- **The editor's reading of R matters.** With R in the editor's think block,
-  the fit of explanations with thinking on against a question without X was
-  +0.24 ± 0.08; with R as text to paraphrase, it is +0.06 ± 0.05. Reading R
-  as its own deliberation brought the editor's readout closer to the
-  advisor's, so register separated J from the reversed J less.
 - **Per item, the fit is noisy** (SD about 0.5 in both explanation
   cases). At
   full signal the draws differ only in row count, so they are not
