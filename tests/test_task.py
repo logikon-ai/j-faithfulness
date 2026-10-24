@@ -6,9 +6,10 @@ from j_faithfulness.task import (
     CONDITIONS,
     both_orders,
     cases,
-    curves,
     diluted,
     fit,
+    item_fits,
+    item_means,
     question,
     scored,
     spread_rows,
@@ -224,25 +225,43 @@ def test_fit_with_one_item_has_no_standard_error():
     assert math.isnan(fit(results)[0]["SE"])
 
 
-def test_curves():
+def test_item_means_average_each_items_draws():
     results = [
-        scored_trial("a", "reversed", 1.0),
-        scored_trial("b", "reversed", 3.0),
-        scored_trial("a", "reversed", 0.0, p=1.0),
+        scored_trial("a", "reversed", 1.0, draw=0),
+        scored_trial("a", "reversed", 3.0, draw=1),
+        scored_trial("b", "reversed", 0.0, p=1.0),
     ]
-    assert curves(results) == [
+    case = "explanation, thinking off"
+    assert item_means(results) == [
         {
-            "case": "explanation, thinking off",
+            "case": case,
             "condition": "reversed",
             "signal": 0.0,
+            "id": "b",
             "log_odds": 0.0,
             "correct": 0.5,
         },
         {
-            "case": "explanation, thinking off",
+            "case": case,
             "condition": "reversed",
             "signal": 1.0,
+            "id": "a",
             "log_odds": 2.0,
             "correct": 1.0,
         },
+    ]
+
+
+def test_item_fits_pair_each_item_per_signal():
+    results = [
+        scored_trial("a", "reversed", 3.0),
+        scored_trial("a", "reversed, foreign X", 1.0),
+        scored_trial("a", "reversed", 0.5, p=0.5),
+        scored_trial("a", "reversed, foreign X", 0.0, p=0.5),
+        scored_trial("a", "foreign", 9.0),
+    ]
+    case = "explanation, thinking off"
+    assert item_fits(item_means(results)) == [
+        {"case": case, "signal": 0.5, "id": "a", "fit": 0.5},
+        {"case": case, "signal": 1.0, "id": "a", "fit": 2.0},
     ]

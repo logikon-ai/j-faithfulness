@@ -259,42 +259,24 @@ def _(OUT, json, kept, results, run):
 
 @app.cell
 def _(results, task):
-    # Means per point: a chart of every trial embeds them all in its output,
-    # which outgrows marimo's limit at 50 items.
-    curves = task.curves(results)
-    return (curves,)
+    # Per-item means over draws: the charts take standard errors over items,
+    # and a chart of every trial outgrows marimo's output limit.
+    means = task.item_means(results)
+    fits = task.item_fits(means)
+    return fits, means
 
 
 @app.cell
-def _(alt, curves):
-    (
-        alt.Chart(alt.Data(values=curves))
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("signal:Q", title="signal fraction (1 − p)"),
-            y=alt.Y("log_odds:Q", title="log-odds of the right answer"),
-            color=alt.Color("case:N", title=None),
-        )
-        .properties(width=220, height=180)
-        .facet(column=alt.Column("condition:N", title=None))
-        .properties(title="Mean log-odds, averaged over both orders:")
+def _(alt, fits):
+    _full = alt.Chart(alt.Data(values=fits)).transform_filter("datum.signal == 1")
+    _zero = _full.mark_rule(strokeDash=[4, 4]).encode(x=alt.datum(0))
+    _bars = _full.mark_errorbar(extent="stderr").encode(
+        x=alt.X("fit:Q", title="fit (log-odds)"), y=alt.Y("case:N", title=None)
     )
-    return
+    _points = _full.mark_point(filled=True).encode(x="mean(fit):Q", y="case:N")
 
-
-@app.cell
-def _(alt, curves):
-    (
-        alt.Chart(alt.Data(values=curves))
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("signal:Q", title="signal fraction (1 − p)"),
-            y=alt.Y("correct:Q", title="accuracy", scale=alt.Scale(domain=[0, 1])),
-            color=alt.Color("case:N", title=None),
-        )
-        .properties(width=220, height=180)
-        .facet(column=alt.Column("condition:N", title=None))
-        .properties(title="Accuracy as the candidates are diluted:")
+    (_zero + _bars + _points).properties(
+        width=360, title="The fit at full signal, ± 1 SE over items:"
     )
     return
 
@@ -304,6 +286,63 @@ def _(results, task):
     # The fit at full signal: reversed minus reversed with a foreign X,
     # paired per item; mean and standard error over items.
     task.fit(results)
+    return
+
+
+@app.cell
+def _(alt, fits):
+    _base = alt.Chart(alt.Data(values=fits)).encode(
+        x=alt.X("signal:Q", title="signal fraction (1 − p)"),
+        color=alt.Color("case:N", title=None),
+    )
+    _band = _base.mark_errorband(extent="stderr").encode(
+        y=alt.Y("fit:Q", title="fit (log-odds)")
+    )
+    _line = _base.mark_line(point=True).encode(y="mean(fit):Q")
+
+    (_band + _line).properties(
+        width=360, height=220, title="The fit as the candidates are diluted, ± 1 SE:"
+    )
+    return
+
+
+@app.cell
+def _(alt, means, task):
+    # Foreign in grey: it is the calibration, not the measurement.
+    condition_colors = alt.Scale(
+        domain=list(task.CONDITIONS), range=["#bab0ac", "#4c78a8", "#f58518"]
+    )
+    _base = alt.Chart(alt.Data(values=means)).encode(
+        x=alt.X("signal:Q", title="signal fraction (1 − p)"),
+        color=alt.Color("condition:N", scale=condition_colors, title=None),
+    )
+    _band = _base.mark_errorband(extent="stderr").encode(
+        y=alt.Y("log_odds:Q", title="log-odds of the right answer")
+    )
+    _line = _base.mark_line(point=True).encode(y="mean(log_odds):Q")
+
+    (_band + _line).properties(width=220, height=180).facet(
+        column=alt.Column("case:N", title=None)
+    ).properties(title="Log-odds per condition, ± 1 SE over items:")
+    return (condition_colors,)
+
+
+@app.cell
+def _(alt, condition_colors, means):
+    (
+        alt.Chart(alt.Data(values=means))
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("signal:Q", title="signal fraction (1 − p)"),
+            y=alt.Y(
+                "mean(correct):Q", title="accuracy", scale=alt.Scale(domain=[0, 1])
+            ),
+            color=alt.Color("condition:N", scale=condition_colors, title=None),
+        )
+        .properties(width=220, height=180)
+        .facet(column=alt.Column("case:N", title=None))
+        .properties(title="Accuracy per condition:")
+    )
     return
 
 

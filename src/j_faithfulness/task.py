@@ -182,54 +182,70 @@ def scored(trials: list[dict], log_odds_a: list[float]) -> list[dict]:
     return out
 
 
-def curves(trials: list[dict]) -> list[dict]:
-    """Mean log-odds and accuracy per case, condition and signal fraction
-    (1 − p), over items and draws."""
+def item_means(trials: list[dict]) -> list[dict]:
+    """Each item's mean log-odds and accuracy per case, condition and signal
+    fraction (1 − p), over its draws: the draws aren't independent, so the
+    item is the unit that standard errors are taken over."""
     points: dict[tuple, list[dict]] = {}
     for t in trials:
-        points.setdefault((t["case"], t["condition"], 1 - t["p"]), []).append(t)
+        key = (t["case"], t["condition"], 1 - t["p"], t["id"])
+        points.setdefault(key, []).append(t)
     return [
         {
             "case": case,
             "condition": condition,
             "signal": signal,
+            "id": id_,
             "log_odds": statistics.fmean(t["log_odds"] for t in ts),
             "correct": statistics.fmean(t["correct"] for t in ts),
         }
-        for (case, condition, signal), ts in sorted(points.items())
+        for (case, condition, signal, id_), ts in sorted(points.items())
+    ]
+
+
+def item_fits(means: list[dict]) -> list[dict]:
+    """Each item's fit per case and signal fraction, from :func:`item_means`:
+    log-odds(reversed) − log-odds(reversed, foreign X)."""
+    log_odds = {
+        (m["case"], m["condition"], m["signal"], m["id"]): m["log_odds"] for m in means
+    }
+    return [
+        {
+            "case": case,
+            "signal": signal,
+            "id": id_,
+            "fit": log_odds[case, "reversed", signal, id_]
+            - log_odds[case, "reversed, foreign X", signal, id_],
+        }
+        for (case, condition, signal, id_) in sorted(log_odds)
+        if condition == "reversed"
     ]
 
 
 def fit(trials: list[dict]) -> list[dict]:
     """Per case, at full signal: the mean log-odds of each condition, the
-    fit, log-odds(reversed) − log-odds(reversed, foreign X), paired per item,
-    with its standard error over items, and the accuracy of each condition.
-    Each item's log-odds and accuracy are first averaged over its draws."""
-    full: dict[tuple, list[dict]] = {}
-    for t in trials:
-        if t["p"] == 0:
-            full.setdefault((t["case"], t["condition"], t["id"]), []).append(t)
-    log_odds = {
-        key: statistics.fmean(t["log_odds"] for t in ts) for key, ts in full.items()
-    }
-    correct = {
-        key: statistics.fmean(t["correct"] for t in ts) for key, ts in full.items()
-    }
+    fit, paired per item, with its standard error over items, and the
+    accuracy of each condition."""
+    means = [m for m in item_means(trials) if m["signal"] == 1]
+    fits = item_fits(means)
     out = []
-    for case in sorted({key[0] for key in full}):
-        ids = sorted({key[2] for key in full if key[0] == case})
-        row: dict = {"case": case, "items": len(ids)}
+    for case in sorted({m["case"] for m in means}):
+        row: dict = {"case": case}
+        case_fits = [f["fit"] for f in fits if f["case"] == case]
+        row["items"] = len(case_fits)
         for condition in CONDITIONS:
-            row[condition] = statistics.fmean(log_odds[case, condition, i] for i in ids)
-        fits = [
-            log_odds[case, "reversed", i] - log_odds[case, "reversed, foreign X", i]
-            for i in ids
-        ]
-        row["fit"] = statistics.fmean(fits)
-        row["SE"] = standard_error(fits)
+            row[condition] = statistics.fmean(
+                m["log_odds"]
+                for m in means
+                if m["case"] == case and m["condition"] == condition
+            )
+        row["fit"] = statistics.fmean(case_fits)
+        row["SE"] = standard_error(case_fits)
         for condition in CONDITIONS:
             row[f"accuracy, {condition}"] = statistics.fmean(
-                correct[case, condition, i] for i in ids
+                m["correct"]
+                for m in means
+                if m["case"] == case and m["condition"] == condition
             )
         out.append(row)
     return out
