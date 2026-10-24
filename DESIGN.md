@@ -387,8 +387,12 @@ reading R as text. At full signal:
    branch `qwen-n1000`), and `LENSES` maps it. It needs a new transcript
    cache and a band retuned for its 64 layers: the band in `LENSES`,
    16–42, is the 4B's scaled to depth.
-4. **Normalization.** The ratio of the fit to the foreign effect partly
-   controls for how well the lens reads a model.
+4. **Normalization.** The fit depends on how well the lens reads a model:
+   noisy rows lower it. The log-odds of the foreign contrast measure how
+   recognizable J is at all, and a poor lens lowers them too. So the ratio
+   of the fit to them makes models with different lenses more comparable.
+   It corrects only as far as the lens reads topic and deliberation equally
+   well.
 
 
 ## Code
