@@ -139,7 +139,7 @@ def test_qwen35_is_a_transcript_format():
     assert FORMATS["Qwen/Qwen3.5-27B"] is QWEN35
 
 
-def test_baseline_is_the_same_text_under_the_editor_role():
+def test_editor_reads_the_same_text_under_its_role():
     ours = QWEN35.transcript(Q, D, E, r=R)
     edit = QWEN35.transcript(Q, D, E, r=R, role=QWEN35.EDIT_ROLE)
     assert edit == ours.replace(QWEN35.ROLE, QWEN35.EDIT_ROLE, 1)

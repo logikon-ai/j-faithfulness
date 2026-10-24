@@ -59,13 +59,13 @@ def _(mo):
     The model sees X (R or E) and two readouts, and answers A or B: one
     forward pass per question. The right candidate is X's own J: the
     advisor's read-out graded against the copy editor's, what deciding
-    adds. Three contrasts for the wrong one:
+    adds. Three conditions for the wrong one:
 
     - **reversed:** the editor's read-out graded against the advisor's, what
       paraphrasing adds. Same item, same tokens, same topic.
     - **reversed, foreign X:** the same two candidates, shown with another
       item's X. The control: register and any match to a rationale in
-      general are the same here, so the fit is the reversed contrast minus
+      general are the same here, so the fit is the reversed condition minus
       this one.
     - **foreign:** another item's J. Different topic.
 
@@ -137,14 +137,14 @@ def _(band, cases, fmt, lens, mo, model, read_span, verbalize):
             _args = (model, lens, fmt, _case["kind"], _case["q"], _case["r"])
             editor = read_span(*_args, editor=True, band=band)
             advisor = read_span(*_args, band=band)
-            # The same two read-outs, contrasted both ways. Graded, not by
+            # The same two read-outs, graded both ways. Graded, not by
             # subtraction: subtraction drops every word both roles produce,
             # the item's core considerations among them, from both J's.
             read.append(
                 {
                     **_case,
-                    "j": verbalize(advisor, baselines=[editor]),
-                    "reversed": verbalize(editor, baselines=[advisor]),
+                    "j": verbalize(advisor, against=[editor]),
+                    "reversed": verbalize(editor, against=[advisor]),
                 }
             )
             _bar.update()
@@ -326,8 +326,8 @@ def _(
     for _i, _case in enumerate(kept):
         groups.setdefault((_case["kind"], _case["thinking"]), []).append(_i)
 
-    def contrasts(case, m):
-        """(contrast, X shown, wrong candidate) for one distractor item."""
+    def conditions(case, m):
+        """(condition, X shown, wrong candidate) for one distractor item."""
         return [
             ("reversed", case["x"], case["reversed"]),
             ("reversed, foreign X", kept[m]["x"], case["reversed"]),
@@ -343,7 +343,7 @@ def _(
             min(DRAWS, len(others) * (len(others) - 1)),
         )
         for _draw, (m, k) in enumerate(pairs):
-            for contrast, x, other in contrasts(_case, m):
+            for condition, x, other in conditions(_case, m):
                 for p in DOSES:
                     right, wrong = diluted(
                         _case["j"], other, kept[k]["j"], p, f"{_i} {_draw}"
@@ -352,7 +352,7 @@ def _(
                         {
                             "id": _case["id"],
                             "case": _case["case"],
-                            "contrast": contrast,
+                            "condition": condition,
                             "other": kept[m]["id"],
                             "filler": kept[k]["id"],
                             "p": p,
@@ -388,7 +388,7 @@ def _(pd, trials):
     results["correct_second"] = results.right_second > 0
     results["signal"] = 1 - results.p
 
-    results.groupby(["contrast", "case", "signal"])[
+    results.groupby(["condition", "case", "signal"])[
         ["correct", "correct_first", "correct_second", "log_odds"]
     ].mean().round(3)
     return (results,)
@@ -399,7 +399,7 @@ def _(results):
     # Means per point, computed here: a chart of every trial embeds them all
     # in its output, which outgrows marimo's limit at 50 items.
     curves = (
-        results.groupby(["contrast", "case", "signal"])[["log_odds", "correct"]]
+        results.groupby(["condition", "case", "signal"])[["log_odds", "correct"]]
         .mean()
         .reset_index()
     )
@@ -416,7 +416,7 @@ def _(alt, curves):
         _base.mark_line(point=True)
         .encode(y=alt.Y("log_odds:Q", title="log-odds of the right answer"))
         .properties(width=220, height=180)
-        .facet(column=alt.Column("contrast:N", title=None))
+        .facet(column=alt.Column("condition:N", title=None))
         .properties(title="Mean log-odds, averaged over both orders:")
     )
     return
@@ -432,7 +432,7 @@ def _(alt, curves):
         _base.mark_line(point=True)
         .encode(y=alt.Y("correct:Q", title="accuracy", scale=alt.Scale(domain=[0, 1])))
         .properties(width=220, height=180)
-        .facet(column=alt.Column("contrast:N", title=None))
+        .facet(column=alt.Column("condition:N", title=None))
         .properties(title="Accuracy as the candidates are diluted:")
     )
     return
@@ -444,7 +444,7 @@ def _(pd, results):
     # with another item's X, paired per item; mean and standard error.
     full = results[results.signal == 1]
     per_item = full.pivot_table(
-        index=["case", "id"], columns="contrast", values="log_odds"
+        index=["case", "id"], columns="condition", values="log_odds"
     )
     by_case = per_item.groupby(level="case")
     summary = by_case.mean()

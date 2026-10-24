@@ -5,10 +5,10 @@ import pytest
 from j_faithfulness.lens import LatentReadout
 from j_faithfulness.verbalize import (
     Row,
-    contrast,
     document,
     echoes,
     fence,
+    grade,
     is_english,
     is_latin,
     is_word_like,
@@ -169,40 +169,40 @@ def test_fence():
     assert fence(j) == "<latentthought>\na, b.\nc.\n</latentthought>"
 
 
-def test_contrast_is_graded_by_the_strongest_baseline():
+def test_grade_against_the_strongest_role():
     decide = readout([["fair", "Answer"], ["fair", "honest"]])
     copy = readout([["Answer", "fair"], ["text"]])
     edit = readout([["honest"], ["text"]])
     # One unit, so IDF is 1. fair: tf 1 + 1 here, 1/2 in copy, 0 in edit;
     # Answer: 1/2 vs 1; honest: 1/2 vs 0 in copy, 1 in edit.
-    (copy_only,) = contrast(decide, copy)
+    (copy_only,) = grade(decide, copy)
     assert copy_only == pytest.approx(
         {"fair": (2, 1.5), "Answer": (0.5, -0.5), "honest": (0.5, 0.5)}
     )
-    (both,) = contrast(decide, copy, edit)
+    (both,) = grade(decide, copy, edit)
     assert both == pytest.approx(
         {"fair": (2, 1.5), "Answer": (0.5, -0.5), "honest": (0.5, -0.5)}
     )
 
 
-def test_contrast_keeps_idf():
+def test_grade_keeps_idf():
     decide = readout([["fair"]], [["fair", "kind"]])
     copy = readout([["text"]], [["kind"]])
     # At unit 1, fair is in the other unit's document: idf log(2/2) = 0.
     # kind: tf 1/2 vs 1 in copy, idf log(2/1).
-    _, unit_1 = contrast(decide, copy)
+    _, unit_1 = grade(decide, copy)
     assert unit_1["fair"] == pytest.approx((1, 0))
     assert unit_1["kind"] == pytest.approx((0.5, -0.5 * math.log(2)))
 
 
-def test_contrast_needs_the_same_number_of_units():
+def test_grade_needs_the_same_number_of_units():
     a = readout([["x"]])
     b = readout([["x"]], [["y"]])
     with pytest.raises(ValueError):
-        contrast(a, b)
+        grade(a, b)
 
 
-def test_verbalize_graded_against_a_baseline():
+def test_verbalize_graded_against_another_role():
     decide = readout([["Answer", "fair"]], [["Answer", "kind"]])
     copy = readout([["Answer"]], [["Answer"]])
     # Answer is as strong in copy: score 0. fair and kind: tf 1/2, not in

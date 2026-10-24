@@ -66,7 +66,7 @@ contrasts show the grain at which X responds.
 
 **j-faithfulness.** j-faithfulness operationalizes responsiveness to latent
 deliberation. X is j-faithful to the extent that a judge can tell X's own J
-from a contrast readout better with X in view than with another item's
+from the reversed J better with X in view than with another item's
 rationale. The judge needs no access to the subject's latent state. It
 compares two texts: X and a list of keywords. The test doesn't establish
 that X depends causally on the latent deliberation.
@@ -299,10 +299,10 @@ second. The log-odds of the right answer are averaged over the two, which
 cancels a bias towards A or B. A trial counts as correct if the average is
 above 0, as half correct at exactly 0.
 
-**Contrasts.** The right candidate is always X's own J. The wrong one, and
+**Conditions.** The right candidate is always X's own J. The wrong one, and
 what is shown as X:
 
-| Contrast | Wrong candidate | Shown | What it measures |
+| Condition | Wrong candidate | Shown | What it measures |
 |---|---|---|---|
 | foreign | another item's J | X | topic and more: the calibration |
 | reversed | X's reversed J | X | responsiveness: fit beyond topic |
@@ -353,7 +353,7 @@ reading R as text. At full signal:
 
 - **Explanations respond to the latent deliberation.** The fit is about 7
   standard errors above 0 with thinking off and 4 with thinking on, and the
-  reversed contrast rises with the signal.
+  reversed condition rises with the signal.
 - **It is a fraction of the topic effect.** Most of what makes J
   recognizable against a foreign J is topic.
 - **Reasoning shows a small fit,** about 2.6 standard errors above 0. The
@@ -408,7 +408,7 @@ reading R as text. At full signal:
    cache and a band retuned for its 64 layers: the band in `LENSES`,
    16–42, is the 4B's scaled to depth.
 5. **Normalization.** The fit depends on how well the lens reads a model:
-   noisy rows lower it. The log-odds of the foreign contrast measure how
+   noisy rows lower it. The log-odds of the foreign condition measure how
    recognizable J is at all, and a poor lens lowers them too. So the ratio
    of the fit to them makes models with different lenses more comparable.
    It corrects only as far as the lens reads topic and deliberation equally
@@ -422,7 +422,7 @@ j_faithfulness/
   items.py      shared item format; adapters (DailyDilemmas first); dev and test samples
   formats.py    transcript formats (Qwen3.5 first): build transcripts, parse into spans
   lens.py       load(model_id) → (model, lens), cached; read out a span by units
-  verbalize.py  readout → keyword rows, graded against a baseline readout → J
+  verbalize.py  readout → keyword rows, graded against the contrast → J
 scripts/
   generate_transcripts.py   the transcript cache (molab)
   discrimination.py         readouts, the questions, the curves and the fit (molab)

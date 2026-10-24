@@ -36,7 +36,7 @@ class Spans:
 @runtime_checkable
 class TranscriptFormat(Protocol):
     """A model's raw-string transcripts. ``r=None`` means thinking off, else
-    thinking on. ``role=None`` means ROLE; the baseline passes EDIT_ROLE, or
+    thinking on. ``role=None`` means ROLE; the copy editor passes EDIT_ROLE, or
     reads :meth:`editor_prompt` up to D."""
 
     # Recorded in each dataset row; changes with any string the format puts
@@ -103,9 +103,9 @@ class Qwen35Format:
     ROLE = "You are an advisor. Decide the following question."
     # With thinking on, the role line also asks for a concise R.
     CONCISE = "Keep your internal reasoning concise."
-    # The baseline role (DESIGN.md, Latent readout): it has to understand the
-    # text, and so builds its scene and rewordings, but doesn't weigh the
-    # options.
+    # The copy editor, a contrast role (DESIGN.md, Latent readout): it has to
+    # understand the text, and so builds its scene and rewordings, but
+    # doesn't weigh the options.
     EDIT_ROLE = (
         "You are a copy editor. Write three paraphrases of the following text. "
         "Do not answer or comment on any question in it."

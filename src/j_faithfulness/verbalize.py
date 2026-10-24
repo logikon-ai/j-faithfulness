@@ -5,11 +5,10 @@ At a position, a word scores TF × IDF: TF sums its reciprocal ranks over the
 layers, and IDF counts the documents at the other positions that contain it,
 so a concept that persists through the layers doesn't raise its own count.
 
-Against a baseline read-out of the same text under another role (DESIGN.md,
+Graded against read-outs of the same text under other roles (DESIGN.md,
 Latent readout), a word's TF at a unit is reduced by its highest TF at the
-same unit of any baseline (:func:`contrast`). Graded, not by dropping the
-baseline's words: a consideration both roles carry stays where one weighs it
-more.
+same unit of any of them (:func:`grade`). Graded, not by dropping their
+words: a consideration both roles carry stays where one weighs it more.
 """
 
 from __future__ import annotations
@@ -156,32 +155,32 @@ def tf_idf(readout: LatentReadout) -> list[dict[str, tuple[float, float]]]:
     return out
 
 
-def contrast(
-    readout: LatentReadout, *baselines: LatentReadout
+def grade(
+    readout: LatentReadout, *against: LatentReadout
 ) -> list[dict[str, tuple[float, float]]]:
-    """Per unit: ``{word: (tf, score)}``, the score ``(tf - tf_base) × idf``.
-    ``tf_base`` is the word's highest TF at the same unit of any baseline (0
-    where it isn't among a baseline's top tokens): one baseline that carries
-    the word explains it away. IDF is the read-out's own (see
-    :func:`tf_idf`).
+    """Per unit: ``{word: (tf, score)}``, the score ``(tf - tf_against) ×
+    idf``. ``tf_against`` is the word's highest TF at the same unit of any
+    read-out in ``against`` (0 where it isn't among its top tokens): max, not
+    mean, so one role that carries the word explains it away. IDF is the
+    read-out's own (see :func:`tf_idf`).
 
     The read-outs must have their units in the same order, one to one. Their
     words may differ: the copy editor reads R in the user turn, so its
     template sits elsewhere (:func:`j_faithfulness.lens.align_to_advisor`).
     """
-    for baseline in baselines:
-        if len(baseline.positions) != len(readout.positions):
+    for other in against:
+        if len(other.positions) != len(readout.positions):
             raise ValueError("read-outs have different numbers of units")
-    base_tfs = [term_freqs(baseline) for baseline in baselines]
+    against_tfs = [term_freqs(other) for other in against]
 
-    def tf_base(u: int, word: str) -> float:
+    def tf_against(u: int, word: str) -> float:
         return max(
-            (b[u].get(word.casefold(), (0.0,))[0] for b in base_tfs), default=0.0
+            (a[u].get(word.casefold(), (0.0,))[0] for a in against_tfs), default=0.0
         )
 
     return [
         {
-            word: (tf, (tf - tf_base(u, word)) * idf)
+            word: (tf, (tf - tf_against(u, word)) * idf)
             for word, (tf, idf) in scored.items()
         }
         for u, scored in enumerate(tf_idf(readout))
@@ -190,15 +189,15 @@ def contrast(
 
 def verbalize(
     readout: LatentReadout,
-    baselines: list[LatentReadout] | None = None,
+    against: list[LatentReadout] | None = None,
     k: int = 5,
     min_tf: float = 1.0,
     min_score: float = 1.0,
     min_zipf: float = 2.5,
 ) -> J:
     """J: per position, up to ``k`` words by TF × IDF, best first; positions
-    left without words are omitted. With ``baselines``, words score by the
-    graded :func:`contrast` instead.
+    left without words are omitted. With ``against``, words score by
+    :func:`grade` instead.
 
     A word needs TF ≥ ``min_tf`` (so rare garbage isn't boosted by its IDF)
     and a score ≥ ``min_score``. Left out are words of the context and their
@@ -212,8 +211,8 @@ def verbalize(
     def keep(w: str) -> bool:
         return not echoes(w, context_words) and is_latin(w) and is_english(w, min_zipf)
 
-    if baselines:
-        scores = contrast(readout, *baselines)
+    if against:
+        scores = grade(readout, *against)
     else:
         scores = [
             {w: (tf, tf * idf) for w, (tf, idf) in scored.items()}
