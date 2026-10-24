@@ -105,6 +105,7 @@ def _(band, contrast_roles, lens, model, read_case, transcript):
         transcript["q"],
         "explanation",
         transcript["r"],
+        [option["label"] for option in transcript["options"]],
     )
 
     # Top words at the last unit, right before D, at the band's middle layer.

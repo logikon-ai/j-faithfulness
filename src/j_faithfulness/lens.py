@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import functools
 from bisect import bisect_right
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -13,7 +13,7 @@ import jlens
 import torch
 from jlens.hooks import ActivationRecorder
 
-from j_faithfulness.contrasts import Role, role_context
+from j_faithfulness.contrasts import Role, for_options, role_context
 from j_faithfulness.formats import QWEN35, Kind
 
 LENS_REPO = "neuronpedia/jacobian-lens"
@@ -302,6 +302,7 @@ def read_case(
     q: str,
     kind: Kind,
     r: str | None = None,
+    options: Sequence[str] = (),
 ) -> tuple[LatentReadout, list[LatentReadout]]:
     """Read out J's span for one case (DESIGN.md, Latent readout, Span)
     under the advisor and under each role, the roles' units aligned to the
@@ -309,9 +310,11 @@ def read_case(
     reasoning case, or up to D in the explanation case, R included if there
     is one. ``r``: the transcript's R, None with thinking off; only the
     explanation case reads it. ``band``: the model's, from :data:`LENSES`.
+    ``options``: the item's option labels, which per-option roles expand
+    over (see :func:`j_faithfulness.contrasts.for_options`).
 
-    Returns the advisor's readout and the roles' readouts, in ``roles``'
-    order.
+    Returns the advisor's readout and the expanded roles' readouts, in
+    their order.
     """
     if kind == "reasoning":
         advisor_context, read_r = QWEN35.reasoning_prompt(q), None
@@ -322,7 +325,7 @@ def read_case(
     advisor_units = [unit for part in advisor_segments for unit in part]
     advisor = read_out(model, lens, advisor_context, band, advisor_units, q_units)
     contrast = []
-    for role in roles:
+    for role in for_options(roles, list(options)):
         context = role_context(role, q, read_r)
         role_units = align(
             advisor_segments, segments(model.tokenizer, context, q, read_r)

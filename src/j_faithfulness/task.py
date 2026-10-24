@@ -52,6 +52,7 @@ def cases(rows: list[dict], model_id: str, n_items: int) -> list[dict]:
             "q": row["q"],
             "r": row["r"],
             "x": row["r"] if kind == "reasoning" else row["e"],
+            "options": [option["label"] for option in row["options"]],
         }
         for row in rows
         if row["id"] in item_ids

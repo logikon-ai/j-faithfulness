@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from j_faithfulness import lens as lens_module
-from j_faithfulness.contrasts import load_contrast, role_context
+from j_faithfulness.contrasts import for_options, load_contrast, role_context
 from j_faithfulness.formats import QWEN35
 from j_faithfulness.lens import (
     Segments,
@@ -235,7 +235,7 @@ def test_read_case(tiny_chars, contrast, case):
     model, lens = tiny_chars
     kind, r = CASES[case]
     roles = load_contrast(contrast)
-    advisor, readouts = read_case(model, lens, (1, 3), roles, CASE_Q, kind, r)
+    advisor, readouts = read_case(model, lens, (1, 3), roles, CASE_Q, kind, r, "AB")
 
     read_r = r if kind == "explanation" else None
     advisor_context = (
@@ -245,7 +245,7 @@ def test_read_case(tiny_chars, contrast, case):
     )
     assert advisor.context == advisor_context
     assert [c.context for c in readouts] == [
-        role_context(role, CASE_Q, read_r) for role in roles
+        role_context(role, CASE_Q, read_r) for role in for_options(roles, ["A", "B"])
     ]
 
     advisor_segments = segments(model.tokenizer, advisor_context, CASE_Q, read_r)

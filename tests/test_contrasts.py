@@ -2,7 +2,13 @@ import dataclasses
 
 import pytest
 
-from j_faithfulness.contrasts import Role, contrast_name, load_contrast, role_context
+from j_faithfulness.contrasts import (
+    Role,
+    contrast_name,
+    for_options,
+    load_contrast,
+    role_context,
+)
 from j_faithfulness.formats import QWEN35
 
 Q = "Should I tell my friend?\n\nA. Tell her.\nB. Don't tell her."
@@ -36,7 +42,8 @@ def test_editor_renders_without_and_with_r():
 
 
 def test_advocates_render_without_and_with_r():
-    roles = load_contrast("advocates")
+    roles = for_options(load_contrast("advocates"), ["A", "B"])
+    assert [role.name for role in roles] == ["advocate A", "advocate B"]
     assert [role.reads_r for role in roles] == ["text", "text"]
     for role, x in zip(roles, "AB", strict=True):
         assert role_context(role, Q) == (
@@ -111,9 +118,31 @@ def test_load_contrast_by_path(tmp_path):
 def test_roles_round_trip_as_dicts():
     roles = load_contrast("advocates")
     assert [Role(**dataclasses.asdict(role)) for role in roles] == roles
-    assert [role.name for role in roles] == ["advocate A", "advocate B"]
+    assert [role.name for role in roles] == ["advocate"]
 
 
 def test_load_contrast_rejects_an_unknown_name():
     with pytest.raises(FileNotFoundError):
         load_contrast("no-such-contrast")
+
+
+def test_per_option_roles_expand_over_the_items_options():
+    editor = load_contrast("editor")
+    roles = for_options(load_contrast("advocates") + editor, ["1", "2", "3"])
+    assert [role.name for role in roles] == [
+        "advocate 1",
+        "advocate 2",
+        "advocate 3",
+        "editor",
+    ]
+    assert "for option 3." in roles[2].template
+    assert not any(role.per_option for role in roles)
+    assert for_options(editor, []) == editor
+
+
+def test_a_per_option_role_needs_options_and_its_placeholder():
+    (advocate_role,) = load_contrast("advocates")
+    with pytest.raises(ValueError, match="needs the options"):
+        for_options([advocate_role], [])
+    with pytest.raises(ValueError, match="option"):
+        Role("advocate", "Argue.\n\n{text}", "text", per_option=True)

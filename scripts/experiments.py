@@ -142,7 +142,7 @@ def _(band, cases, j_and_reversed, lens, mo, model, read_case, roles):
     read = []
     for _c in mo.status.progress_bar(cases, title="Read out"):
         _advisor, _contrast = read_case(
-            model, lens, band, roles, _c["q"], _c["kind"], _c["r"]
+            model, lens, band, roles, _c["q"], _c["kind"], _c["r"], _c["options"]
         )
         _j, _reversed_j = j_and_reversed(_advisor, _contrast)
         read.append({**_c, "j": _j, "reversed": _reversed_j})

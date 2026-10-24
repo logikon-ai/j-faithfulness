@@ -14,23 +14,52 @@ import yaml
 from j_faithfulness.formats import QWEN35
 
 PLACEHOLDER = "{text}"
+# A per-option role's template names its option here, once or more.
+OPTION = "{option}"
 
 
 @dataclass(frozen=True)
 class Role:
     """A contrast role. ``template`` is the text of its user turn, with
     PLACEHOLDER once for what it reads. ``reads_r``: R goes into the user
-    turn after Q (``text``) or into the role's own think block (``think``)."""
+    turn after Q (``text``) or into the role's own think block (``think``).
+    ``per_option``: the role stands for one role per option of the item, its
+    template naming the option at OPTION (see :func:`for_options`)."""
 
     name: str
     template: str
     reads_r: Literal["text", "think"]
+    per_option: bool = False
 
     def __post_init__(self) -> None:
         if self.template.count(PLACEHOLDER) != 1:
             raise ValueError(f"{self.name}: the template needs {PLACEHOLDER} once")
         if self.reads_r not in ("text", "think"):
             raise ValueError(f"{self.name}: reads_r must be 'text' or 'think'")
+        if self.per_option and OPTION not in self.template:
+            raise ValueError(f"{self.name}: a per-option template needs {OPTION}")
+
+
+def for_options(roles: list[Role], labels: list[str]) -> list[Role]:
+    """The roles for an item with these option labels: each per-option role
+    becomes one role per label, so an item with three options gets three
+    advocates."""
+    expanded = []
+    for role in roles:
+        if not role.per_option:
+            expanded.append(role)
+            continue
+        if not labels:
+            raise ValueError(f"{role.name}: a per-option role needs the options")
+        expanded += [
+            Role(
+                f"{role.name} {label}",
+                role.template.replace(OPTION, label),
+                role.reads_r,
+            )
+            for label in labels
+        ]
+    return expanded
 
 
 def load_contrast(name_or_path: str | Path) -> list[Role]:

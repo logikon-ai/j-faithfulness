@@ -223,7 +223,9 @@ of the role's user turn, with one placeholder, `{text}`, for what the role
 reads. `reads_r` says where the role reads R: `text`, in its user turn, or
 `think`, in its own think block. With `text`, `{text}` is Q, a blank line
 and R; without R, it is Q. Every contrast role reads as one user turn
-followed by an empty think block, in every case.
+followed by an empty think block, in every case. A role marked `per_option`
+stands for one role per option of the item: its template names the option
+at `{option}`, so an item with three options gets three such roles.
 
 A contrast is a YAML file that lists its roles. The built-in ones ship with
 the package and are loaded by name; one's own is loaded by path. A result
@@ -235,10 +237,10 @@ The built-in roles both read R as text:
   question in it." The editor has to understand the text, so its readout
   carries the scene and the rewordings of Q, but it doesn't weigh the
   options. The editor only reads; it writes no paraphrases.
-- **Advocates** (`advocates`): two roles, one for each option, each charged
-  to produce as many arguments as it can for its side. They are used
-  together: one advocate alone leaves the other side's arguments in the
-  residual. The line, for option A: "You are an advocate for option A. Given
+- **Advocates** (`advocates`): one per-option role, so one advocate for
+  each option, each charged to produce as many arguments as it can for its
+  side. They are used together: one advocate alone leaves the other
+  options' arguments in the residual. The line, for option A: "You are an advocate for option A. Given
   the following text, list every argument you can for option A. Do not weigh
   the options or choose between them." "Given the following text" names
   what the advocate reads without limiting it to extraction; "every argument

@@ -35,6 +35,7 @@ def row(id_, r, model="m"):
         "q": f"Q {id_}",
         "r": r,
         "e": f"E {id_}",
+        "options": [{"label": "A", "action": "Do"}, {"label": "B", "action": "Don't"}],
         "metadata": {"model_id": model},
     }
 
@@ -49,6 +50,7 @@ def test_cases():
         ("b", "explanation, thinking off", "E b"),
     ]
     assert got[1]["r"] == "R a" and got[1]["thinking"] and not got[0]["thinking"]
+    assert got[0]["options"] == ["A", "B"]
 
 
 def test_spread_rows():

@@ -1,14 +1,9 @@
 # The advocates (DESIGN.md, Latent readout), one per option, used together:
-# one advocate alone leaves the other side's arguments in the residual.
-- name: advocate A
+# one advocate alone leaves the other options' arguments in the residual.
+- name: advocate
   reads_r: text
+  per_option: true
   template: |-
-    You are an advocate for option A. Given the following text, list every argument you can for option A. Do not weigh the options or choose between them.
-
-    {text}
-- name: advocate B
-  reads_r: text
-  template: |-
-    You are an advocate for option B. Given the following text, list every argument you can for option B. Do not weigh the options or choose between them.
+    You are an advocate for option {option}. Given the following text, list every argument you can for option {option}. Do not weigh the options or choose between them.
 
     {text}
