@@ -103,9 +103,25 @@ def _(contrast_name):
     # Cases whose J or reversed J has fewer rows are left out: the
     # candidates are cut to the shorter one, and a few rows say little.
     MIN_ROWS = 5
+    # Questions per batch and padded tokens per batch: lower both on a smaller
+    # GPU; on molab's 96 GB both can go up.
+    BATCH_SIZE = 64
+    BATCH_TOKENS = 65536
     # One file per model and contrast, so a run doesn't overwrite another's.
     OUT = f"experiments_{MODEL_ID.split('/')[-1]}_{contrast_name(CONTRAST)}.json"
-    return CONTRAST, DATASET, DOSES, DRAWS, MIN_ROWS, MODEL_ID, N_ITEMS, OUT, SHA
+    return (
+        BATCH_SIZE,
+        BATCH_TOKENS,
+        CONTRAST,
+        DATASET,
+        DOSES,
+        DRAWS,
+        MIN_ROWS,
+        MODEL_ID,
+        N_ITEMS,
+        OUT,
+        SHA,
+    )
 
 
 @app.cell
@@ -185,12 +201,17 @@ def _(DOSES, DRAWS, kept, task):
 
 
 @app.cell
-def _(QWEN35, hf_model, log_odds_a, mo, model, task, trials):
+def _(BATCH_SIZE, BATCH_TOKENS, QWEN35, hf_model, log_odds_a, mo, model, task, trials):
     # All questions in one batched pass, right candidate first then second.
     prompts = [QWEN35.answer_prompt(t[o]) for t in trials for o in ("first", "second")]
     with mo.status.progress_bar(total=len(set(prompts)), title="Ask") as _bar:
         scores = log_odds_a(
-            hf_model, model.tokenizer, prompts, lambda n: _bar.update(increment=n)
+            hf_model,
+            model.tokenizer,
+            prompts,
+            lambda n: _bar.update(increment=n),
+            BATCH_SIZE,
+            BATCH_TOKENS,
         )
     results = task.scored(trials, scores)
 

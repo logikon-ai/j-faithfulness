@@ -364,13 +364,16 @@ def log_odds_a(
     tokenizer,
     prompts: list[str],
     progress: Callable[[int], None] | None = None,
+    batch_size: int = BATCH_SIZE,
+    batch_tokens: int = BATCH_TOKENS,
 ) -> list[float]:
     """logit(" A") − logit(" B") at the next token after each prompt, in
     input order. The HF model, not the jlens wrapper: the wrapper's forward
     takes no attention mask, which left padding needs; scripts/generate.py
     computes D in left-padded batches too. A prompt that occurs
     twice is run once (at p = 1 both orders are the same prompt).
-    ``progress`` is called with the number of prompts each batch scored."""
+    ``progress`` is called with the number of prompts each batch scored.
+    ``batch_size``, ``batch_tokens``: the caps of :func:`batches`."""
     if not prompts:
         return []
     letters = [tokenizer.encode(f" {c}", add_special_tokens=False) for c in "AB"]
@@ -382,7 +385,7 @@ def log_odds_a(
     if lengths and max(lengths) >= MAX_SEQ_LEN:
         raise ValueError(f"a prompt reaches MAX_SEQ_LEN={MAX_SEQ_LEN} tokens")
     scores: dict[str, float] = {}
-    for batch in batches(lengths):
+    for batch in batches(lengths, batch_size, batch_tokens):
         texts = [distinct[i] for i in batch]
         enc = tokenizer(
             texts, return_tensors="pt", padding=True, padding_side="left"
