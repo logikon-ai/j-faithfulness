@@ -277,9 +277,9 @@ both have read everything.
    removes the considerations both carry (trust, privacy, harm on a
    confession dilemma) and leaves residue.
 4. **Filter.** Keep English words and names (Zipf frequency ≥ 2.5, at least
-   two characters), with TF ≥ 1 and a graded score ≥ 1. Drop the words of Q,
-   R and every role line, the advisor's and the contrast's, and their
-   variants. The same words drop on both sides, so J never repeats Q or R,
+   two characters), with TF ≥ 1 and a graded score ≥ 1. Drop every word of
+   the contexts read, the advisor's and each contrast role's, and their
+   variants: Q, R, the role lines and the markup. The same words drop on both sides, so J never repeats Q or R,
    and no role's own words tell J from the reversed J.
 5. **Verbalize** each remaining unit as one row of its top 5 words, in
    context order. A readout is shown as plain rows, one per line.
