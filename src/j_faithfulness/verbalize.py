@@ -19,10 +19,13 @@ import math
 import re
 import unicodedata
 from collections import Counter
+from typing import TYPE_CHECKING
 
 from wordfreq import zipf_frequency
 
-from j_faithfulness.lens import LatentReadout
+if TYPE_CHECKING:
+    # Types only: task.py imports verbalize and stays free of torch.
+    from j_faithfulness.lens import LatentReadout
 
 # Words sharing their first ECHO_PREFIX letters with a word of the context
 # count as echoing it (allergy, allergies ← allergic), and so do context words
