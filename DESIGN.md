@@ -141,30 +141,37 @@ its own.
 rationale fits its own J.
 
 **Generation and cache.** `scripts/generate_transcripts.py`, a marimo
-notebook run on molab, generates the transcripts once with batched HF
-generation in bf16. All generation code lives in this script. It runs three
+notebook run on molab, generates the transcripts once per model with
+batched HF generation in bf16. All generation code lives in this script. A
+run takes the model, the number of dev items (the first n of the dev
+sample, so models share items), a seed and the cap on R. It runs three
 batched passes over the items:
 1. **R** with thinking on, sampled with the model card's thinking-mode
    settings and capped at 8,000 tokens. An R that hits the cap is closed with
    `...\n</think>\n\n`; the `...` counts as part of R.
 2. **D** in both kinds of transcript: the most likely option letter after
    `</think>\n\n`.
-3. **E** in both kinds of transcript, sampled with the model card's non-thinking
-   settings, since E follows an empty think block.
+3. **E** in both kinds of transcript, sampled with the model card's
+   non-thinking settings, since E follows an empty think block, and capped
+   at 2,000 tokens against a runaway reply.
 
 R is saved to a JSON file named by every setting it depends on, and a rerun
 with the same settings loads it, so a failure in D or E doesn't cost the
 slowest pass. E is seeded on its own, so it doesn't depend on whether R was
 generated or loaded.
 
-For Qwen3.5-4B, the card gives temperature 1.0, top-p 0.95, top-k 20 for
-thinking and 0.7, 0.8, 20 for non-thinking, min-p 0 for both. HF generation
-has no presence penalty, so the card's 1.5 is left out.
+The Qwen3.5-4B and 27B cards give the same settings: temperature 1.0,
+top-p 0.95, top-k 20 for thinking and 0.7, 0.8, 20 for non-thinking, min-p
+0 for both. HF generation has no presence penalty, so the cards' 1.5 is
+left out.
 
 **Dataset.** The script pushes the transcripts to a Hugging Face dataset;
 consumers pin its commit. Each run loads the latest commit, replaces the rows
 with the same model, source, item and thinking mode, and pushes the
-result, so one dataset holds the transcripts of several models. Each row
+result, so one dataset holds the transcripts of several models. The
+dataset card's schema is rewritten from the data on each run:
+`push_to_hub` keeps an existing card's schema, and `load_dataset` fails on
+a stale one. Each row
 holds one transcript, so each item has two rows. A row stores the
 transcript's parts, not the raw string:
 `row_transcript(row)` in `items.py` rebuilds the string exactly with the
@@ -177,8 +184,9 @@ row's format, and refuses if the format's name no longer matches. The fields:
   `r_cap`, `e_cap`, `r_capped`, `e_capped` and `generated_at` (UTC; null in
   rows from before it was added).
 
-The current cache is `ggbetz/cached-reasoning-records` with Qwen3.5-4B on
-dev items of DailyDilemmas.
+The current cache is `ggbetz/cached-reasoning-records` (commit `2d98d41`)
+with Qwen3.5-4B on 100 dev items of DailyDilemmas and Qwen3.5-27B on the
+first 50 of them.
 
 
 ## Latent readout of the deliberation residual
@@ -344,8 +352,11 @@ left-padded batches, shortest first.
 
 ## Status
 
-Qwen3.5-4B at the copy editor's grain, 50 items, 4 draws, graded J, the
-editor reading R as text. At full signal:
+Each model judges its own data, at the copy editor's grain, on the same 50
+items, with 4 draws, graded J and the editor reading R as text. At full
+signal.
+
+**Qwen3.5-4B.**
 
 | Case | foreign | reversed | reversed, foreign X | fit | accuracy with own X / foreign X |
 |---|---|---|---|---|---|
@@ -364,6 +375,39 @@ editor reading R as text. At full signal:
 - **Per item, the fit is noisy** (SD about 0.5 in both explanation
   cases). At full signal the draws differ only in row count, so they are
   not replicates. A per-item score would need the dose curve or more draws.
+
+**Qwen3.5-27B,** with the 4B's band scaled to depth (16–42), not retuned.
+
+| Case | foreign | reversed | reversed, foreign X | fit | accuracy with own X / foreign X |
+|---|---|---|---|---|---|
+| explanation, thinking off | 4.58 | 1.39 | −0.18 | +1.57 ± 0.13 | 92% / 41% |
+| explanation, thinking on | 3.72 | 1.00 | 0.23 | +0.77 ± 0.09 | 96% / 63% |
+| reasoning, thinking on | 3.49 | 1.54 | 0.62 | +0.92 ± 0.08 | 100% / 91% |
+
+- **All three cases respond to the latent deliberation,** reasoning
+  included. The fits are 8 to 12 standard errors above 0.
+- **The control depends on the kind of X.** Another item's R pulls the
+  model towards J: R deliberates, and any J holds deliberation. Another
+  item's E pushes it away. The two J's are read over nearly the same span,
+  and with their own X both score about the same (1.39 and 1.54). The gap
+  between their fits comes from the control. So fits compare within one
+  kind of X, not between R and E.
+- **Two curves dip at full signal.** The reversed condition falls from 1.65
+  at a signal of 0.75 to 1.39 with thinking off, and from 1.17 to 1.00
+  with thinking on. That is about 2 standard errors; the fit, read at full
+  signal, inherits it.
+
+**Across the two models.**
+- **The 27B is more j-faithful in every case.** It is also the better
+  reader: the foreign condition, which needs no responsiveness, rises
+  about threefold, and more for reasoning. The ratio of the fit to the
+  foreign condition (see Next) is alike for explanations (0.26 and 0.34
+  with thinking off, 0.22 and 0.21 with thinking on) and doubles for
+  reasoning (0.13 and 0.26). The judge ablation separates the reader from
+  the rationales.
+- **Explanations fit better with thinking off,** in both models. The J
+  with thinking on has rows read over R, so the two cases differ in J as
+  well as in E.
 
 
 ## Limits
@@ -408,12 +452,7 @@ editor reading R as text. At full signal:
    j-faithfulness, but it is comparable across models. If the fixed judge
    finds more than the model, the model missed what X carries. If it finds
    less, the model reads its own rationales better than an outsider does.
-4. **Qwen3.5-27B.** A lens exists
-   (`qwen3.5-27b/jlens/Salesforce-wikitext/Qwen3.5-27B_jacobian_lens.pt`,
-   branch `qwen-n1000`), and `LENSES` maps it. It needs a new transcript
-   cache and a band retuned for its 64 layers: the band in `LENSES`,
-   16–42, is the 4B's scaled to depth.
-5. **Normalization.** The fit depends on how well the lens reads a model:
+4. **Normalization.** The fit depends on how well the lens reads a model:
    noisy rows lower it. The log-odds of the foreign condition measure how
    recognizable J is at all, and a poor lens lowers them too. So the ratio
    of the fit to them makes models with different lenses more comparable.
