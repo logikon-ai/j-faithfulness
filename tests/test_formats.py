@@ -12,7 +12,7 @@ def field(text: str, span: Span | None) -> str | None:
     return None if span is None else text[span.start : span.end]
 
 
-def test_protocol_3_template():
+def test_thinking_off_template():
     assert QWEN35.transcript("Q?", "A", "E.") == (
         "<|im_start|>user\nYou are an advisor. Decide the following question.\n\n"
         "Q?<|im_end|>\n"
@@ -22,7 +22,7 @@ def test_protocol_3_template():
     )
 
 
-def test_protocol_4_template():
+def test_thinking_on_template():
     assert QWEN35.transcript("Q?", "A", "E.", r="R.") == (
         "<|im_start|>user\nYou are an advisor. Decide the following question. "
         "Keep your internal reasoning concise.\n\nQ?<|im_end|>\n"
@@ -37,13 +37,12 @@ def test_protocol_4_template():
 
 def test_prefixes():
     full = QWEN35.transcript(Q, D, E, r=R)
-    # Protocol 2 is protocol 4 up to D.
-    protocol_2 = QWEN35.decision_prompt(Q, r=R)
-    assert full.startswith(protocol_2)
-    assert protocol_2.endswith(f"{R}\n</think>\n\n")
-    assert protocol_2.startswith(QWEN35.reasoning_prompt(Q))
+    up_to_d = QWEN35.decision_prompt(Q, r=R)
+    assert full.startswith(up_to_d)
+    assert up_to_d.endswith(f"{R}\n</think>\n\n")
+    assert up_to_d.startswith(QWEN35.reasoning_prompt(Q))
     assert QWEN35.reasoning_prompt(Q).endswith("<|im_start|>assistant\n<think>\n")
-    assert QWEN35.explanation_prompt(Q, D, r=R) == protocol_2 + D + (
+    assert QWEN35.explanation_prompt(Q, D, r=R) == up_to_d + D + (
         "<|im_end|>\n<|im_start|>user\nExplain.<|im_end|>\n"
         "<|im_start|>assistant\n<think>\n\n</think>\n\n"
     )

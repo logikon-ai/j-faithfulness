@@ -1,5 +1,5 @@
-"""Transcript formats: one model's raw-string transcripts of protocols 3 and
-4, how to build them and how to locate their spans (DESIGN.md, Transcripts).
+"""Transcript formats: one model's raw-string transcripts, with thinking off
+and on, how to build them and how to locate their spans (DESIGN.md, Transcripts).
 Pure string functions: generation lives in scripts/generate_transcripts.py."""
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ class Span(NamedTuple):
 @dataclass(frozen=True)
 class Spans:
     """Where each part of a transcript sits. ``opening`` is the text before Q
-    that readouts skip; ``prompt`` runs from the end of Q to R (protocol 4) or
-    D (protocol 3). ``r`` is None in protocol 3."""
+    that readouts skip; ``prompt`` runs from the end of Q to R (thinking on) or
+    D (thinking off). ``r`` is None with thinking off."""
 
     opening: Span
     q: Span
@@ -35,9 +35,9 @@ class Spans:
 
 @runtime_checkable
 class TranscriptFormat(Protocol):
-    """A model's raw-string transcripts. ``r=None`` means protocol 3, else
-    protocol 4; protocol 2 is protocol 4 up to D. ``role=None`` means ROLE;
-    the baseline passes EDIT_ROLE, or reads :meth:`editor_prompt` up to D."""
+    """A model's raw-string transcripts. ``r=None`` means thinking off, else
+    thinking on. ``role=None`` means ROLE; the baseline passes EDIT_ROLE, or
+    reads :meth:`editor_prompt` up to D."""
 
     # Recorded in each dataset row; changes with any string the format puts
     # into a transcript, the roles included.
@@ -46,7 +46,7 @@ class TranscriptFormat(Protocol):
     EDIT_ROLE: str
 
     def reasoning_prompt(self, q: str, role: str | None = None) -> str:
-        """Protocol 4 up to R."""
+        """The transcript with thinking on, up to R."""
         ...
 
     def decision_prompt(
@@ -56,7 +56,7 @@ class TranscriptFormat(Protocol):
         capped: bool = False,
         role: str | None = None,
     ) -> str:
-        """The transcript up to D: protocol 3, or protocol 2."""
+        """The transcript up to D."""
         ...
 
     def editor_prompt(self, q: str, r: str | None = None) -> str:
@@ -152,7 +152,7 @@ class Qwen35Format:
         return f"{self.USER_OPEN}{line}\n\n{q}{self.TURN_END}\n"
 
     def reasoning_prompt(self, q: str, role: str | None = None) -> str:
-        """Protocol 4 up to R, ending in ``<think>\\n``."""
+        """The transcript with thinking on, up to R, ending in ``<think>\\n``."""
         return self.user_turn(q, role, thinking=True) + self.THINK_OPEN
 
     def closed_reasoning(self, r: str, capped: bool = False) -> str:
@@ -161,7 +161,7 @@ class Qwen35Format:
         if capped:
             r += self.CAP_MARK
         if not r:
-            # <think>\n\n</think> would read as protocol 3.
+            # <think>\n\n</think> would read as thinking off.
             raise ValueError("R is empty")
         return f"{r}\n{self.THINK_END}\n\n"
 
@@ -172,8 +172,8 @@ class Qwen35Format:
         capped: bool = False,
         role: str | None = None,
     ) -> str:
-        """The transcript up to D: protocol 3 if ``r`` is None, else protocol
-        2. Both end in ``</think>\\n\\n``."""
+        """The transcript up to D, with thinking off if ``r`` is None. Both
+        end in ``</think>\\n\\n``."""
         if r is None:
             if capped:
                 raise ValueError("capped needs an R")
@@ -181,8 +181,8 @@ class Qwen35Format:
         return self.reasoning_prompt(q, role) + self.closed_reasoning(r, capped)
 
     def editor_prompt(self, q: str, r: str | None = None) -> str:
-        """The copy editor's context up to D (DESIGN.md, Two roles): protocol
-        3 under EDIT_ROLE if ``r`` is None, else Q and R as one text in the
+        """The copy editor's context up to D (DESIGN.md, Two roles): thinking
+        off under EDIT_ROLE if ``r`` is None, else Q and R as one text in the
         user turn, followed by an empty think block. In the think block the
         editor would read R as its own deliberation, which its role forbids."""
         if r is None:
@@ -214,16 +214,16 @@ class Qwen35Format:
         capped: bool = False,
         role: str | None = None,
     ) -> str:
-        """The full transcript, protocol 3 if ``r`` is None, else protocol 4."""
+        """The full transcript, with thinking off if ``r`` is None."""
         self.check_field("E", e)
         return self.explanation_prompt(q, d, r, capped, role) + e + self.TURN_END
 
     def parse(self, text: str) -> Spans:
-        """Locate the spans of a protocol-3 or protocol-4 transcript. Raises
+        """Locate the spans of a transcript with thinking off or on. Raises
         ValueError on a string that doesn't match either."""
         m = self.PATTERN.fullmatch(text)
         if not m:
-            raise ValueError("not a protocol-3 or protocol-4 transcript")
+            raise ValueError("not a transcript of this format")
         for name in ("role", "q", "r", "d", "e"):
             if m[name] is not None:
                 self.check_field(name, m[name])

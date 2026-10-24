@@ -102,8 +102,9 @@ def _(datasets):
     cases = [
         {
             "id": row["id"],
-            "protocol": 4 if row["r"] else 3,
+            "thinking": row["r"] is not None,
             "kind": kind,
+            "case": f"{kind}, thinking {'on' if row['r'] else 'off'}",
             "q": row["q"],
             "r": row["r"],
             "x": row["r"] if kind == "reasoning" else row["e"],
@@ -156,7 +157,7 @@ def _(band, cases, fmt, lens, mo, model, read_span, verbalize):
 def _(fence, read):
     _case = next(c for c in read if c["kind"] == "explanation" and c["r"])
 
-    print(f"{_case['id']}, explanation, protocol 4. J, what deciding adds:\n")
+    print(f"{_case['id']}, explanation, thinking on. J, what deciding adds:\n")
     print(fence(_case["j"]))
     print("\nReversed J, what paraphrasing adds:\n")
     print(fence(_case["reversed"]))
@@ -169,7 +170,7 @@ def _(MIN_ROWS, pd, read):
         [
             {
                 "id": c["id"],
-                "case": f"{c['kind']}, protocol {c['protocol']}",
+                "case": c["case"],
                 "J rows": len(c["j"]),
                 "reversed rows": len(c["reversed"]),
             }
@@ -319,11 +320,11 @@ def _(
     question,
     random,
 ):
-    # Distractor m and filler k from the same kind and protocol, so all
+    # Distractor m and filler k from the same kind and thinking mode, so all
     # candidates were read the same way.
     groups = {}
     for _i, _case in enumerate(kept):
-        groups.setdefault((_case["kind"], _case["protocol"]), []).append(_i)
+        groups.setdefault((_case["kind"], _case["thinking"]), []).append(_i)
 
     def contrasts(case, m):
         """(contrast, X shown, wrong candidate) for one distractor item."""
@@ -336,7 +337,7 @@ def _(
     # All questions first, then one batched pass over them.
     trials = []
     for _i, _case in enumerate(kept):
-        others = [i for i in groups[_case["kind"], _case["protocol"]] if i != _i]
+        others = [i for i in groups[_case["kind"], _case["thinking"]] if i != _i]
         pairs = random.Random(_i).sample(
             [(m, k) for m in others for k in others if m != k],
             min(DRAWS, len(others) * (len(others) - 1)),
@@ -350,7 +351,7 @@ def _(
                     trials.append(
                         {
                             "id": _case["id"],
-                            "case": f"{_case['kind']}, protocol {_case['protocol']}",
+                            "case": _case["case"],
                             "contrast": contrast,
                             "other": kept[m]["id"],
                             "filler": kept[k]["id"],

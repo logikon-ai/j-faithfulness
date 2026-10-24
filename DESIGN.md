@@ -22,6 +22,8 @@ Construct).
 - **R**: the ex-ante rationale, the thinking trace between the think tags.
 - **D**: the decision, the answer token after `</think>\n\n`.
 - **E**: the ex-post rationale, the reply to a follow-up turn "Explain."
+- **Transcript**: one conversation of the subject model on Q under the
+  advisor role: R (with thinking on), D, and E as the reply to "Explain."
 - **Advisor role**: the role of the transcript, "You are an advisor. Decide
   the following question." The subject model writes R, D and E under it.
 - **Contrast role**: a role that reads the same text as the advisor without
@@ -33,8 +35,8 @@ Construct).
 - **Reversed J**: the contrast role's readout over the same text, graded
   against the advisor's.
 - **X**: the rationale tested, R or E.
-- **Case**: one kind of test on one protocol: reasoning in protocol 4,
-  explanation in protocol 3, explanation in protocol 4.
+- **Case**: one kind of test on one kind of transcript: reasoning with
+  thinking on, explanation with thinking off, explanation with thinking on.
 - **Judge**: the model that answers the discrimination question. So far it is
   the subject model itself.
 
@@ -111,22 +113,23 @@ thinking on, plus "Keep your internal reasoning concise.").
 
 ```
 <|im_start|>user\n{role}\n\n{Q}<|im_end|>\n
-<|im_start|>assistant\n<think>\n\n</think>\n\n{D}             ← protocol 3 (thinking off)
-<|im_start|>assistant\n<think>\n{R}\n</think>\n\n{D}          ← protocol 4 (thinking on)
+<|im_start|>assistant\n<think>\n\n</think>\n\n{D}             ← thinking off
+<|im_start|>assistant\n<think>\n{R}\n</think>\n\n{D}          ← thinking on
 <|im_end|>\n<|im_start|>user\nExplain.<|im_end|>\n
 <|im_start|>assistant\n<think>\n\n</think>\n\n{E}
 ```
 
-Each item has two transcripts: protocol 3 (thinking off) and protocol 4
-(thinking on). Protocol 2 is protocol 4 up to D.
+Each item has two transcripts, one with thinking off and one with thinking
+on.
 
-**The format is Qwen3.5's.** Protocols 3 and 4 fix the structure; a
-transcript format renders it in one model's strings. `formats.py` defines
-the interface `TranscriptFormat` (build each prefix, parse a transcript into
-spans) and one implementation, `Qwen35Format`, named `qwen3.5/1`. The format
-holds every string it puts into a transcript, the roles included, and its
-name changes with any of them. Qwen3.5-27B shares the 4B's chat template and
-so its format; another model family needs its own.
+**The format is Qwen3.5's.** The two kinds of transcript share a
+structure; a transcript format renders it as one model's string.
+`formats.py` defines the interface `TranscriptFormat` (build each prefix,
+parse a transcript into spans) and one implementation, `Qwen35Format`,
+named `qwen3.5/1`. The format holds every string it puts into a transcript,
+the roles included, and its name changes with any of them. Qwen3.5-27B
+shares the 4B's chat template and so its format; another model family needs
+its own.
 
 **Transcripts are the subject model's own.** The test is whether a model's
 own rationale fits its own J.
@@ -135,12 +138,12 @@ own rationale fits its own J.
 notebook run on molab, generates the transcripts once with batched HF
 generation in bf16. All generation code lives in this script. It runs three
 batched passes over the items:
-1. **R** in protocol 4, sampled with the model card's thinking-mode settings
-   and capped at 8,000 tokens. An R that hits the cap is closed with
+1. **R** with thinking on, sampled with the model card's thinking-mode
+   settings and capped at 8,000 tokens. An R that hits the cap is closed with
    `...\n</think>\n\n`; the `...` counts as part of R.
-2. **D** in both protocols: the most likely option letter after
+2. **D** in both kinds of transcript: the most likely option letter after
    `</think>\n\n`.
-3. **E** in both protocols, sampled with the model card's non-thinking
+3. **E** in both kinds of transcript, sampled with the model card's non-thinking
    settings, since E follows an empty think block.
 
 R is saved to a JSON file named by every setting it depends on, and a rerun
@@ -154,15 +157,16 @@ has no presence penalty, so the card's 1.5 is left out.
 
 **Dataset.** The script pushes the transcripts to a Hugging Face dataset;
 consumers pin its commit. Each run loads the latest commit, replaces the rows
-with the same model, source, item and protocol, and pushes the result, so
-one dataset holds the transcripts of several models. Each row is one transcript, so each item has two
-rows. A row stores the transcript's parts, not the raw string:
+with the same model, source, item and thinking mode, and pushes the
+result, so one dataset holds the transcripts of several models. Each row
+holds one transcript, so each item has two rows. A row stores the
+transcript's parts, not the raw string:
 `row_transcript(row)` in `items.py` rebuilds the string exactly with the
 row's format, and refuses if the format's name no longer matches. The fields:
 - **The item:** `id`, `q`, `domain`, `source`, `source_revision`, and
   `options`, a list of `{label, action}` in option order.
 - **The model's output:** `r`, `d`, `d_probs` (in option order) and `e`. `r`
-  is null in protocol 3, which tells the protocols apart.
+  is null with thinking off, which tells the two kinds apart.
 - **`metadata`**: `model_id`, `model_revision`, `format`, `sampling`, `seed`,
   `r_cap`, `e_cap`, `r_capped`, `e_capped` and `generated_at` (UTC; null in
   rows from before it was added).
@@ -184,13 +188,13 @@ layers already predict the output.
 
 | Case | Point | Span |
 |---|---|---|
-| reasoning, protocol 4 | start of R | Q and the generation prompt up to `<think>\n` |
-| explanation, protocol 3 | D | Q and the generation prompt up to D |
-| explanation, protocol 4 | D | Q, the generation prompt, R and `</think>\n\n` |
+| reasoning, thinking on | start of R | Q and the generation prompt up to `<think>\n` |
+| explanation, thinking off | D | Q and the generation prompt up to D |
+| explanation, thinking on | D | Q, the generation prompt, R and `</think>\n\n` |
 
 The opening `<|im_start|>user\n` and the role line are left out. So the
-reasoning J is read over Q alone, before R exists; only the explanation J in
-protocol 4 has rows read over R.
+reasoning J is read over Q alone, before R exists; only the explanation J with
+thinking on has rows read over R.
 
 **Units.** Each word of Q and the generation prompt is a unit, at its last
 subtoken. Each sentence of R is one unit, ending at `.`, `?`, `!` or a line
@@ -204,7 +208,7 @@ text, so
 its readout carries the scene and the rewordings of Q, but it doesn't weigh
 the options. The editor only reads; it writes no paraphrases.
 
-The editor gets Q and R as one text to paraphrase. In protocol 4, its user
+The editor gets Q and R as one text to paraphrase. With thinking on, its user
 turn holds Q, a blank line and R, followed by an empty think block. R
 doesn't go into the editor's think block: there the editor would read R as
 its own deliberation, which its role forbids. So the editor relates to Q and
@@ -327,12 +331,12 @@ reading R as text. At full signal:
 
 | Case | foreign | reversed | reversed, foreign X | fit | accuracy with own X / foreign X |
 |---|---|---|---|---|---|
-| explanation, protocol 3 | 1.92 | 0.42 | −0.08 | +0.50 ± 0.08 | 84% / 43% |
-| explanation, protocol 4 | 1.15 | 0.32 | 0.07 | +0.25 ± 0.06 | 78% / 56% |
-| reasoning, protocol 4 | 0.52 | 0.09 | 0.02 | +0.07 ± 0.03 | 73% / 53% |
+| explanation, thinking off | 1.92 | 0.42 | −0.08 | +0.50 ± 0.08 | 84% / 43% |
+| explanation, thinking on | 1.15 | 0.32 | 0.07 | +0.25 ± 0.06 | 78% / 56% |
+| reasoning, thinking on | 0.52 | 0.09 | 0.02 | +0.07 ± 0.03 | 73% / 53% |
 
 - **Explanations respond to the latent deliberation.** The fit is about 7
-  standard errors above 0 in protocol 3 and 4 in protocol 4, and the
+  standard errors above 0 with thinking off and 4 with thinking on, and the
   reversed contrast rises with the signal.
 - **It is a fraction of the topic effect.** Most of what makes J
   recognizable against a foreign J is topic.
@@ -340,7 +344,7 @@ reading R as text. At full signal:
   reasoning J is read over Q alone, R is long, and the judge is small; the
   data can't tell which of these keeps it small.
 - **The editor's reading of R matters.** With R in the editor's think block,
-  the fit of explanations in protocol 4 against a question without X was
+  the fit of explanations with thinking on against a question without X was
   +0.24 ± 0.08; with R as text to paraphrase, it is +0.06 ± 0.05. Reading R
   as its own deliberation brought the editor's readout closer to the
   advisor's, so register separated J from the reversed J less.
@@ -397,7 +401,7 @@ reading R as text. At full signal:
 ```
 j_faithfulness/
   items.py      shared item format; adapters (DailyDilemmas first); dev and test samples
-  formats.py    transcript formats (Qwen3.5 first): build protocols 3 and 4, parse into spans
+  formats.py    transcript formats (Qwen3.5 first): build transcripts, parse into spans
   lens.py       load(model_id) → (model, lens), cached; read out a span by units
   verbalize.py  readout → keyword rows, graded against a baseline readout → J
 scripts/

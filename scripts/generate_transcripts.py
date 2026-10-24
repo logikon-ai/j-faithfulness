@@ -64,9 +64,9 @@ def _(mo):
     # Generate transcripts
 
     Generates the two transcripts of each dev item (DESIGN.md, Transcripts):
-    protocol 3 (thinking off) and protocol 4 (thinking on). Three batched
-    passes: R in protocol 4, D in both, E in both. Each transcript becomes one
-    row of a Hugging Face dataset; pin the commit printed at the end.
+    one with thinking off and one with thinking on. Three batched passes: R
+    with thinking on, D in both, E in both. Each transcript becomes one row of
+    a Hugging Face dataset; pin the commit printed at the end.
     """)
     return
 
@@ -370,24 +370,26 @@ def _(
         probs = option_probs(prompts, [i.options for i in items], title, batch_size)
         return [(max(p, key=p.get), p) for p in probs]
 
-    decisions_3 = decide(
+    decisions_off = decide(
         [transcript_format.decision_prompt(i.q) for i in items],
-        "D, protocol 3",
+        "D, thinking off",
         BATCH_SIZE,
     )
-    decisions_4 = decide(
+    decisions_on = decide(
         [
             transcript_format.decision_prompt(i.q, r, capped)
             for i, (r, capped) in zip(items, reasonings, strict=True)
         ],
-        "D, protocol 4",
+        "D, thinking on",
         R_PROMPT_BATCH_SIZE,
     )
     [
-        (i.id, d3, d4)
-        for i, (d3, _), (d4, _) in zip(items, decisions_3, decisions_4, strict=True)
+        (i.id, d_off, d_on)
+        for i, (d_off, _), (d_on, _) in zip(
+            items, decisions_off, decisions_on, strict=True
+        )
     ]
-    return decisions_3, decisions_4
+    return decisions_off, decisions_on
 
 
 @app.cell
@@ -396,8 +398,8 @@ def _(
     E_CAP,
     R_PROMPT_BATCH_SIZE,
     config,
-    decisions_3,
-    decisions_4,
+    decisions_off,
+    decisions_on,
     eos,
     items,
     reasonings,
@@ -408,35 +410,35 @@ def _(
 ):
     # Seeded here too: with R loaded from disk, the RNG isn't where R left it.
     transformers.set_seed(config["seed"] + 1)
-    explanations_3 = sample(
+    explanations_off = sample(
         [
             transcript_format.explanation_prompt(i.q, d)
-            for i, (d, _) in zip(items, decisions_3, strict=True)
+            for i, (d, _) in zip(items, decisions_off, strict=True)
         ],
         eos,
         E_CAP,
         sampling["e"],
-        "E, protocol 3",
+        "E, thinking off",
         BATCH_SIZE,
     )
-    explanations_4 = sample(
+    explanations_on = sample(
         [
             transcript_format.explanation_prompt(i.q, d, r, capped)
             for i, (d, _), (r, capped) in zip(
-                items, decisions_4, reasonings, strict=True
+                items, decisions_on, reasonings, strict=True
             )
         ],
         eos,
         E_CAP,
         sampling["e"],
-        "E, protocol 4",
+        "E, thinking on",
         R_PROMPT_BATCH_SIZE,
     )
     {
-        "capped, protocol 3": sum(stop is None for _, stop in explanations_3),
-        "capped, protocol 4": sum(stop is None for _, stop in explanations_4),
+        "capped, thinking off": sum(stop is None for _, stop in explanations_off),
+        "capped, thinking on": sum(stop is None for _, stop in explanations_on),
     }
-    return explanations_3, explanations_4
+    return explanations_off, explanations_on
 
 
 @app.cell
@@ -444,10 +446,10 @@ def _(
     E_CAP,
     config,
     datetime,
-    decisions_3,
-    decisions_4,
-    explanations_3,
-    explanations_4,
+    decisions_off,
+    decisions_on,
+    explanations_off,
+    explanations_on,
     items,
     model_revision,
     reasonings,
@@ -467,20 +469,23 @@ def _(
         "e_cap": E_CAP,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
-    # One row per transcript: protocol 3 (r is None), then protocol 4.
+    # One row per transcript: thinking off (r is None), then thinking on.
     rows = []
-    for item, (r, r_capped), (d3, p3), (d4, p4), (e3, stop3), (e4, stop4) in zip(
+    for item, (r, r_capped), (d_off, p_off), (d_on, p_on), (e_off, stop_off), (
+        e_on,
+        stop_on,
+    ) in zip(
         items,
         reasonings,
-        decisions_3,
-        decisions_4,
-        explanations_3,
-        explanations_4,
+        decisions_off,
+        decisions_on,
+        explanations_off,
+        explanations_on,
         strict=True,
     ):
         for _r, _capped, _d, _p, _e, _stop in (
-            (None, None, d3, p3, e3, stop3),
-            (r, r_capped, d4, p4, e4, stop4),
+            (None, None, d_off, p_off, e_off, stop_off),
+            (r, r_capped, d_on, p_on, e_on, stop_on),
         ):
             _text = transcript_format.transcript(item.q, _d, _e, _r, bool(_capped))
             # The stored R is the text between the think tags, cap mark
