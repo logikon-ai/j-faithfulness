@@ -1,4 +1,5 @@
-"""Load the model and its pre-fitted lens; read the lens out word by word."""
+"""Load the model and its pre-fitted lens; read out a case word by word under
+the advisor and the contrast roles, aligned."""
 
 from __future__ import annotations
 
@@ -11,7 +12,8 @@ import jlens
 import torch
 from jlens.hooks import ActivationRecorder
 
-from j_faithfulness.formats import Kind, Qwen35Format
+from j_faithfulness.contrasts import Role, role_context
+from j_faithfulness.formats import QWEN35, Kind
 
 LENS_REPO = "neuronpedia/jacobian-lens"
 LENS_REVISION = "qwen-n1000"
@@ -57,19 +59,20 @@ UNIT_BLOCK = 2048
 
 
 @functools.cache
-def load(model_id: str):
-    """Load the model (bf16, CUDA) and its lens from :data:`LENSES`, once per
-    id.
+def load(model_id: str, revision: str | None = None):
+    """Load the model (bf16, CUDA) at ``revision`` and its lens from
+    :data:`LENSES`, once per id and revision.
 
-    Returns ``(model, lens)``: the jlens wrapper of the HF model, and the
+    Returns ``(hf_model, model, lens)``: the HF model, which scoring needs
+    for its attention mask, its jlens wrapper, and the
     :class:`jlens.JacobianLens`.
     """
     import transformers
 
     hf_model = transformers.AutoModelForCausalLM.from_pretrained(
-        model_id, dtype=torch.bfloat16
+        model_id, revision=revision, dtype=torch.bfloat16
     ).cuda()
-    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, revision=revision)
     model = jlens.from_hf(hf_model, tokenizer)
     spec = LENSES[model_id]
     lens = jlens.JacobianLens.from_pretrained(
@@ -80,7 +83,7 @@ def load(model_id: str):
     missing = set(range(spec.band[0], spec.band[1] + 1)) - set(lens.source_layers)
     if missing:
         raise ValueError(f"{model_id}: lens has no layers {sorted(missing)}")
-    return model, lens
+    return hf_model, model, lens
 
 
 # Raw tokens kept per unit and layer: enough for word-like ones to remain
@@ -94,7 +97,7 @@ class LatentReadout:
 
     ``top[u][j]`` are the decoded top tokens of unit ``u`` at the band's
     ``j``-th layer, in rank order (index = rank), unfiltered;
-    :func:`j_faithfulness.verbalize.verbalize` turns them into J. The first
+    :func:`j_faithfulness.verbalize.j_and_reversed` turns them into J. The first
     ``q_units`` units are Q's, which IDF is taken over.
     """
 
@@ -245,78 +248,83 @@ def read_out(
 
 
 class Segments(NamedTuple):
-    """The units of a context with Q and R, by the text they sit in."""
+    """The units of a context from Q on, by the text they sit in. Without R,
+    every unit after Q is in ``after``."""
 
     q: list[list[int]]
-    before_r: list[list[int]]
+    between: list[list[int]]
     r: list[list[int]]
-    after_r: list[list[int]]
+    after: list[list[int]]
 
 
-def segments(tokenizer, context: str, q: str, r: str) -> Segments:
+def segments(tokenizer, context: str, q: str, r: str | None) -> Segments:
     """The units of ``context`` from Q on (see :func:`units`), split at Q's
     and R's ends by where each unit starts."""
     q_start = context.index(q)
     q_end = q_start + len(q)
+    tokens, offsets = tokenize(tokenizer, context)
+    if r is None:
+        read_units = units(tokens, offsets, q_start)
+        q_units = [u for u in read_units if offsets[u[0]][0] < q_end]
+        return Segments(q_units, [], [], read_units[len(q_units) :])
     r_start = context.index(r, q_end)
     r_end = r_start + len(r)
-    tokens, offsets = tokenize(tokenizer, context)
     split = Segments([], [], [], [])
     for unit in units(tokens, offsets, q_start, range(r_start, r_end)):
         split[bisect_right((q_end, r_start, r_end), offsets[unit[0]][0])].append(unit)
     return split
 
 
-def align_to_advisor(advisor: Segments, editor: Segments) -> list[list[int]]:
-    """The editor's units in the advisor's order (DESIGN.md, Two roles), so
-    the two read-outs are graded unit by unit. Q's and R's units pair one to
-    one. Each advisor unit between Q and R gets the editor's last unit before
-    R: both have read Q and nothing of R. The advisor's units after R get the
-    editor's last ones, which close the same template."""
-    if len(advisor.q) != len(editor.q) or len(advisor.r) != len(editor.r):
+def align(advisor: Segments, role: Segments) -> list[list[int]]:
+    """The role's units in the advisor's order (DESIGN.md, Latent readout),
+    so the readouts are graded unit by unit. Q's and R's units pair one to
+    one. An advisor unit between Q and R gets the role's last unit before R,
+    where both have read Q and nothing of R. An advisor unit after the last
+    of Q and R gets the role's last unit, where both have read everything."""
+    if len(advisor.q) != len(role.q) or len(advisor.r) != len(role.r):
         raise ValueError("Q or R splits into different units for the two roles")
-    if not editor.before_r or len(editor.after_r) < len(advisor.after_r):
-        raise ValueError("the editor's context has too few units around R")
-    after_r = editor.after_r[len(editor.after_r) - len(advisor.after_r) :]
-    return editor.q + [editor.before_r[-1]] * len(advisor.before_r) + editor.r + after_r
+    before_r = role.q + role.between
+    last = (before_r + role.r + role.after)[-1]
+    return (
+        role.q
+        + [before_r[-1]] * len(advisor.between)
+        + role.r
+        + [last] * len(advisor.after)
+    )
 
 
-def read_span(
+def read_case(
     model: jlens.LensModel,
     lens: jlens.JacobianLens,
-    fmt: Qwen35Format,
-    kind: Kind,
-    q: str,
-    r: str | None = None,
-    *,
-    editor: bool = False,
     band: tuple[int, int],
-) -> LatentReadout:
-    """Read out J's span for ``kind`` (DESIGN.md, Latent readout, Span), unit
-    by unit, from Q on: Q and the generation prompt up to R, or up to D,
-    with R's sentences as units if there is an R. ``editor``: read the copy
-    editor's context instead of the advisor's, with its units aligned to
-    the advisor's. ``band``: the model's, from :data:`LENSES`."""
+    roles: list[Role],
+    q: str,
+    kind: Kind,
+    r: str | None = None,
+) -> tuple[LatentReadout, list[LatentReadout]]:
+    """Read out J's span for one case (DESIGN.md, Latent readout, Span)
+    under the advisor and under each role, the roles' units aligned to the
+    advisor's (see :func:`align`). The span runs from Q up to R in the
+    reasoning case, or up to D in the explanation case, R included if there
+    is one. ``r``: the transcript's R, None with thinking off; only the
+    explanation case reads it. ``band``: the model's, from :data:`LENSES`.
+
+    Returns the advisor's readout and the roles' readouts, in ``roles``'
+    order.
+    """
     if kind == "reasoning":
-        context = fmt.reasoning_prompt(q, fmt.EDIT_ROLE if editor else None)
-    elif editor:
-        context = fmt.editor_prompt(q, r)
+        advisor_context, read_r = QWEN35.reasoning_prompt(q), None
     else:
-        context = fmt.decision_prompt(q, r)
-    if kind == "explanation" and r is not None and editor:
-        own = segments(model.tokenizer, context, q, r)
-        span_units = align_to_advisor(
-            segments(model.tokenizer, fmt.decision_prompt(q, r), q, r), own
+        advisor_context, read_r = QWEN35.decision_prompt(q, r), r
+    advisor_segments = segments(model.tokenizer, advisor_context, q, read_r)
+    q_units = len(advisor_segments.q)
+    advisor_units = [unit for part in advisor_segments for unit in part]
+    advisor = read_out(model, lens, advisor_context, band, advisor_units, q_units)
+    contrast = []
+    for role in roles:
+        context = role_context(role, q, read_r)
+        role_units = align(
+            advisor_segments, segments(model.tokenizer, context, q, read_r)
         )
-        q_units = len(own.q)
-    else:
-        start = context.index(q)
-        q_end = start + len(q)
-        sentences = None
-        if kind == "explanation" and r is not None:
-            r_start = context.index(r, q_end)
-            sentences = range(r_start, r_start + len(r))
-        tokens, offsets = tokenize(model.tokenizer, context)
-        span_units = units(tokens, offsets, start, sentences)
-        q_units = sum(offsets[unit[0]][0] < q_end for unit in span_units)
-    return read_out(model, lens, context, band, span_units, q_units)
+        contrast.append(read_out(model, lens, context, band, role_units, q_units))
+    return advisor, contrast

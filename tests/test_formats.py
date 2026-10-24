@@ -53,8 +53,6 @@ def test_prefixes():
         {"r": "a</think>b"},
         {"e": "a<|im_end|>"},
         {"q": "a<|im_start|>b"},
-        {"role": ""},
-        {"role": "Role.\nMore."},
     ],
 )
 def test_build_rejects_fields_that_read_as_markup(kwargs):
@@ -62,20 +60,10 @@ def test_build_rejects_fields_that_read_as_markup(kwargs):
         QWEN35.transcript(**({"q": Q, "d": D, "e": E} | kwargs))
 
 
-def test_editor_reads_the_same_text_under_its_role():
-    ours = QWEN35.transcript(Q, D, E, r=R)
-    edit = QWEN35.transcript(Q, D, E, r=R, role=QWEN35.EDIT_ROLE)
-    assert edit == ours.replace(QWEN35.ROLE, QWEN35.EDIT_ROLE, 1)
-
-
-def test_editor_reads_r_as_text_to_paraphrase():
-    assert QWEN35.editor_prompt("Q?", "R.") == (
-        f"<|im_start|>user\n{QWEN35.EDIT_ROLE}\n\nQ?\n\nR.<|im_end|>\n"
-        "<|im_start|>assistant\n<think>\n\n</think>\n\n"
-    )
-    assert QWEN35.editor_prompt(Q) == QWEN35.decision_prompt(Q, role=QWEN35.EDIT_ROLE)
+def test_user_turn():
+    assert QWEN35.user_turn("Hi.\n\nQ?") == "<|im_start|>user\nHi.\n\nQ?<|im_end|>\n"
     with pytest.raises(ValueError):
-        QWEN35.editor_prompt(Q, "")
+        QWEN35.user_turn("a<think>b")
 
 
 def transcript_row(r=None, fmt="qwen3.5/1"):

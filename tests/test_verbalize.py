@@ -8,11 +8,13 @@ from j_faithfulness.verbalize import (
     document,
     echoes,
     grade,
+    idf,
     is_english,
     is_latin,
     is_word_like,
-    tf_idf,
-    verbalize,
+    j_and_reversed,
+    rows_text,
+    term_freqs,
     words,
 )
 
@@ -27,10 +29,18 @@ def readout(*units, context="", q_units=None):
     )
 
 
-def blank(n):
+def blank(n, q_units=None):
     """A role that carries no words at any of ``n`` units: grading against it
     leaves the scores at TF × IDF."""
-    return readout(*[[[]] for _ in range(n)])
+    return readout(*[[[]] for _ in range(n)], q_units=q_units)
+
+
+def tf_idf(r):
+    """Per unit: ``{form: (tf, idf)}`` of one readout."""
+    return [
+        {form: (tf, unit_idf[key]) for key, (tf, form) in unit.items()}
+        for unit, unit_idf in zip(term_freqs([r]), idf([r]), strict=True)
+    ]
 
 
 @pytest.fixture
@@ -137,41 +147,6 @@ def test_tf_idf_single_position_is_plain_tf():
     assert pos == {"Italy": (1.0, 1.0), "boot": (0.5, 1.0)}
 
 
-def generic_and_specific():
-    """ "the" at every position; one specific word per position."""
-    specific = ["Italy", "euro", "Rome", "意大利"]
-    return readout(*[[["the", w], ["the", w]] for w in specific])
-
-
-def test_verbalize_ranks_by_tf_idf_and_drops_generic_words(thresholds):
-    thresholds(min_tf=0.5, min_score=0.1)
-    j = verbalize(generic_and_specific(), [blank(4)])
-    assert j == [["Italy"], ["euro"], ["Rome"]]
-
-
-def test_verbalize_min_tf_and_min_score(thresholds):
-    r = generic_and_specific()
-    # Specific words: tf 1/2 + 1/2 = 1, idf log(7/1) ≈ 1.95.
-    thresholds(min_tf=1.5, min_score=0.01)
-    assert verbalize(r, [blank(4)]) == []
-    thresholds(min_score=2.0)
-    assert verbalize(r, [blank(4)]) == []
-    thresholds(min_score=1.9)
-    assert len(verbalize(r, [blank(4)])) == 3
-
-
-def test_verbalize_drops_context_echo(thresholds):
-    r = readout(
-        [["Italy", "boots"]],
-        [["euro"]],
-        [["Portugal"]],
-        context="Does the country shaped like a boot use the euro?",
-    )
-    # boots echoes boot (suffix); euro is in the context.
-    thresholds(min_tf=0.5, min_score=0.1)
-    assert verbalize(r, [blank(3)]) == [["Italy"], ["Portugal"]]
-
-
 def test_words():
     assert words("Don't use the euro, Italy!") == {
         "don't",
@@ -182,17 +157,26 @@ def test_words():
     }
 
 
-def test_grade_against_the_strongest_role():
+def test_term_freqs_pool_by_max():
+    a = readout([["fair", "honest"], ["fair"]])
+    b = readout([["honest", "Fair"], ["text"]])
+    (unit,) = term_freqs([a, b])
+    # fair: 1 + 1 in a, 1/2 in b; honest: 1/2 in a, 1 in b.
+    assert unit == {"fair": (2, "fair"), "honest": (1, "honest"), "text": (1, "text")}
+
+
+def test_grade_against_the_other_side():
     decide = readout([["fair", "Answer"], ["fair", "honest"]])
     copy = readout([["Answer", "fair"], ["text"]])
     edit = readout([["honest"], ["text"]])
     # One unit, so IDF is 1. fair: tf 1 + 1 here, 1/2 in copy, 0 in edit;
     # Answer: 1/2 vs 1; honest: 1/2 vs 0 in copy, 1 in edit.
-    (copy_only,) = grade(decide, copy)
+    ours, idfs = term_freqs([decide]), idf([decide])
+    (copy_only,) = grade(ours, term_freqs([copy]), idfs)
     assert copy_only == pytest.approx(
         {"fair": (2, 1.5), "Answer": (0.5, -0.5), "honest": (0.5, 0.5)}
     )
-    (both,) = grade(decide, copy, edit)
+    (both,) = grade(ours, term_freqs([copy, edit]), idfs)
     assert both == pytest.approx(
         {"fair": (2, 1.5), "Answer": (0.5, -0.5), "honest": (0.5, -0.5)}
     )
@@ -203,24 +187,97 @@ def test_grade_keeps_idf():
     copy = readout([["text"]], [["kind"]])
     # At unit 1, fair is in the other unit's document: idf log(2/2) = 0.
     # kind: tf 1/2 vs 1 in copy, idf log(2/1).
-    _, unit_1 = grade(decide, copy)
+    _, unit_1 = grade(term_freqs([decide]), term_freqs([copy]), idf([decide]))
     assert unit_1["fair"] == pytest.approx((1, 0))
     assert unit_1["kind"] == pytest.approx((0.5, -0.5 * math.log(2)))
 
 
-def test_grade_needs_the_same_number_of_units():
-    a = readout([["x"]])
-    b = readout([["x"]], [["y"]])
+def test_idf_pools_the_q_documents_of_all_readouts():
+    a = readout([["Italy"]], [["euro"]], [["Rome"]], q_units=2)
+    b = readout([["Italy"]], [["Italy"]], [["euro"]], q_units=2)
+    unit_0, unit_1, sentence = idf([a, b])
+    # Q's documents: 4, 2 at each unit. At unit 0, the other unit's two
+    # documents hold Italy once; at unit 1, Italy twice and euro never.
+    assert unit_0 == pytest.approx({"italy": math.log(3 / 2)})
+    assert unit_1 == pytest.approx({"euro": math.log(3 / 1), "italy": math.log(3 / 3)})
+    # R's sentence scores against all 4: Italy in 3, euro in 1, Rome in 0.
+    assert sentence == pytest.approx({"rome": math.log(5 / 1), "euro": math.log(5 / 2)})
+
+
+def test_readouts_need_the_same_units():
     with pytest.raises(ValueError):
-        grade(a, b)
+        term_freqs([readout([["x"]]), readout([["x"]], [["y"]])])
+    with pytest.raises(ValueError):
+        idf([readout([["x"]], [["y"]]), readout([["x"]], [["y"]], q_units=1)])
+    with pytest.raises(ValueError):
+        j_and_reversed(readout([["x"]]), [readout([["x"]], [["y"]])])
 
 
-def test_verbalize_graded_against_another_role(thresholds):
+def generic_and_specific():
+    """ "the" at every position; one specific word per position."""
+    specific = ["Italy", "euro", "Rome", "意大利"]
+    return readout(*[[["the", w], ["the", w]] for w in specific])
+
+
+def test_j_ranks_by_tf_idf_and_drops_generic_words(thresholds):
+    thresholds(min_tf=0.5, min_score=0.1)
+    j, _ = j_and_reversed(generic_and_specific(), [blank(4)])
+    assert j == [["Italy"], ["euro"], ["Rome"]]
+
+
+def test_j_min_tf_and_min_score(thresholds):
+    r = generic_and_specific()
+    # Specific words: tf 1/2 + 1/2 = 1, idf log(7/1) ≈ 1.95.
+    thresholds(min_tf=1.5, min_score=0.01)
+    assert j_and_reversed(r, [blank(4)])[0] == []
+    thresholds(min_score=2.0)
+    assert j_and_reversed(r, [blank(4)])[0] == []
+    thresholds(min_score=1.9)
+    assert len(j_and_reversed(r, [blank(4)])[0]) == 3
+
+
+def test_j_and_reversed_grade_each_side_against_the_other(thresholds):
     decide = readout([["Answer", "fair"]], [["Answer", "kind"]])
-    copy = readout([["Answer"]], [["Answer"]])
-    # Answer is as strong in copy: score 0. fair and kind: tf 1/2, not in
-    # copy, idf log(2/1): score 0.35.
+    copy = readout([["Answer"]], [["Answer", "text"]])
+    # Answer is as strong on both sides: score 0. fair, kind and text: tf
+    # 1/2, not on the other side, idf log(2/1): score 0.35.
     thresholds(min_tf=0.5, min_score=0.3)
-    assert verbalize(decide, [copy]) == [["fair"], ["kind"]]
+    assert j_and_reversed(decide, [copy]) == ([["fair"], ["kind"]], [["text"]])
     thresholds(min_tf=0.5, min_score=0.4)
-    assert verbalize(decide, [copy]) == []
+    assert j_and_reversed(decide, [copy]) == ([], [])
+
+
+def test_reversed_j_pools_two_roles_with_their_joint_idf(thresholds):
+    thresholds(min_tf=0.5, min_score=0.1)
+    advisor = readout([["harm"]], [["the"]], [["weigh"]], q_units=2)
+    # Each advocate carries its side; "harm" in advocate A's Q documents
+    # lowers its IDF for both at the third unit.
+    pro = readout([["harm"]], [["the"]], [["trust", "honest"]], q_units=2)
+    con = readout([["the"]], [["the"]], [["harm"]], q_units=2)
+    j, reversed_j = j_and_reversed(advisor, [pro, con])
+    # weigh: tf 1, no role carries it, idf log(3/1) over the advisor's Q
+    # documents. harm at unit 0 is as strong on both sides: score 0.
+    assert j == [["weigh"]]
+    # harm: tf 1 (con), idf log(5/2) over the roles' 4 Q documents; trust:
+    # tf 1, idf log(5/1); honest: tf 1/2, idf log(5/1).
+    assert reversed_j == [["trust", "harm", "honest"]]
+
+
+def test_both_sides_drop_the_words_of_every_context(thresholds):
+    thresholds(min_tf=0.5, min_score=0.1)
+    advisor = readout(
+        [["Italy", "advisor"]],
+        [["euro", "editor"]],
+        context="You are an advisor. Does the country shaped like a boot use the euro?",
+    )
+    editor = readout(
+        [["Portugal", "advisor", "boots"]],
+        [["Spain", "editor"]],
+        context="You are an editor. Does the country shaped like a boot use the euro?",
+    )
+    # Each side's role word and the shared Q's words drop on both sides.
+    assert j_and_reversed(advisor, [editor]) == ([["Italy"]], [["Portugal"], ["Spain"]])
+
+
+def test_rows_text():
+    assert rows_text([["fair", "kind"], ["trust"]]) == "fair, kind.\ntrust."

@@ -17,24 +17,17 @@ class Qwen35Format:
     No BOS, no system prompt. The Qwen3.5 sizes share one chat template, so
     they share this format.
 
-    ``r=None`` means thinking off, else thinking on. ``role=None`` means ROLE;
-    the copy editor passes EDIT_ROLE, or reads :meth:`editor_prompt` up to D.
+    ``r=None`` means thinking off, else thinking on. Contrast roles render
+    their own user turn (:func:`j_faithfulness.contrasts.role_context`).
     """
 
-    # Recorded in each dataset row; changes with any string the format puts
-    # into a transcript, the roles included.
+    # Recorded in each dataset row; changes with the markup or the advisor's
+    # lines, not with the contrast roles, which don't touch the transcripts.
     name = "qwen3.5/1"
 
     ROLE = "You are an advisor. Decide the following question."
     # With thinking on, the role line also asks for a concise R.
     CONCISE = "Keep your internal reasoning concise."
-    # The copy editor, a contrast role (DESIGN.md, Latent readout): it has to
-    # understand the text, and so builds its scene and rewordings, but
-    # doesn't weigh the options.
-    EDIT_ROLE = (
-        "You are a copy editor. Write three paraphrases of the following text. "
-        "Do not answer or comment on any question in it."
-    )
 
     USER_OPEN = "<|im_start|>user\n"
     TURN_END = "<|im_end|>"
@@ -50,20 +43,20 @@ class Qwen35Format:
             if marker in text:
                 raise ValueError(f"{name} contains {marker!r}")
 
-    def user_turn(self, q: str, role: str | None, thinking: bool) -> str:
-        """The user turn: the role line, then Q. With thinking on, the role
-        line ends in CONCISE."""
-        role = self.ROLE if role is None else role
-        if not role or "\n" in role:
-            raise ValueError("the role must be one non-empty line")
-        self.check_field("role", role)
-        self.check_field("Q", q)
-        line = f"{role} {self.CONCISE}" if thinking else role
-        return f"{self.USER_OPEN}{line}\n\n{q}{self.TURN_END}\n"
+    def user_turn(self, text: str) -> str:
+        """One user turn holding ``text``."""
+        self.check_field("user turn", text)
+        return f"{self.USER_OPEN}{text}{self.TURN_END}\n"
 
-    def reasoning_prompt(self, q: str, role: str | None = None) -> str:
+    def advisor_turn(self, q: str, thinking: bool) -> str:
+        """The advisor's user turn: the role line, then Q. With thinking on,
+        the role line ends in CONCISE."""
+        line = f"{self.ROLE} {self.CONCISE}" if thinking else self.ROLE
+        return self.user_turn(f"{line}\n\n{q}")
+
+    def reasoning_prompt(self, q: str) -> str:
         """The transcript with thinking on, up to R, ending in ``<think>\\n``."""
-        return self.user_turn(q, role, thinking=True) + self.THINK_OPEN
+        return self.advisor_turn(q, thinking=True) + self.THINK_OPEN
 
     def closed_reasoning(self, r: str) -> str:
         """R and the end of the think block."""
@@ -73,41 +66,22 @@ class Qwen35Format:
             raise ValueError("R is empty")
         return f"{r}\n{self.THINK_END}\n\n"
 
-    def decision_prompt(
-        self, q: str, r: str | None = None, role: str | None = None
-    ) -> str:
+    def decision_prompt(self, q: str, r: str | None = None) -> str:
         """The transcript up to D, with thinking off if ``r`` is None. Both
         end in ``</think>\\n\\n``."""
         if r is None:
-            return self.user_turn(q, role, thinking=False) + self.EMPTY_THINK
-        return self.reasoning_prompt(q, role) + self.closed_reasoning(r)
+            return self.advisor_turn(q, thinking=False) + self.EMPTY_THINK
+        return self.reasoning_prompt(q) + self.closed_reasoning(r)
 
-    def editor_prompt(self, q: str, r: str | None = None) -> str:
-        """The copy editor's context up to D (DESIGN.md, Two roles): thinking
-        off under EDIT_ROLE if ``r`` is None, else Q and R as one text in the
-        user turn, followed by an empty think block. In the think block the
-        editor would read R as its own deliberation, which its role forbids."""
-        if r is None:
-            return self.decision_prompt(q, role=self.EDIT_ROLE)
-        self.check_field("R", r)
-        if not r:
-            raise ValueError("R is empty")
-        user_turn = self.user_turn(f"{q}\n\n{r}", self.EDIT_ROLE, thinking=False)
-        return user_turn + self.EMPTY_THINK
-
-    def explanation_prompt(
-        self, q: str, d: str, r: str | None = None, role: str | None = None
-    ) -> str:
+    def explanation_prompt(self, q: str, d: str, r: str | None = None) -> str:
         """The transcript up to E: D, then the explanation turn."""
         self.check_field("D", d)
-        return self.decision_prompt(q, r, role) + d + self.EXPLAIN_TURN
+        return self.decision_prompt(q, r) + d + self.EXPLAIN_TURN
 
-    def transcript(
-        self, q: str, d: str, e: str, r: str | None = None, role: str | None = None
-    ) -> str:
+    def transcript(self, q: str, d: str, e: str, r: str | None = None) -> str:
         """The full transcript, with thinking off if ``r`` is None."""
         self.check_field("E", e)
-        return self.explanation_prompt(q, d, r, role) + e + self.TURN_END
+        return self.explanation_prompt(q, d, r) + e + self.TURN_END
 
 
 QWEN35 = Qwen35Format()

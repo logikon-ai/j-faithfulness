@@ -22,6 +22,7 @@ app = marimo.App(width="medium")
 def _():
     import json
     import random
+    from dataclasses import asdict
 
     import altair as alt
     import datasets
@@ -29,24 +30,29 @@ def _():
     import pandas as pd
     import torch
 
+    from j_faithfulness.contrasts import contrast_name, load_contrast
     from j_faithfulness.formats import QWEN35
-    from j_faithfulness.lens import LENSES, MAX_SEQ_LEN, load, read_span
-    from j_faithfulness.verbalize import verbalize
+    from j_faithfulness.lens import LENSES, MAX_SEQ_LEN, load, read_case
+    from j_faithfulness.verbalize import j_and_reversed, rows_text
 
     return (
         LENSES,
         MAX_SEQ_LEN,
         QWEN35,
         alt,
+        asdict,
+        contrast_name,
         datasets,
+        j_and_reversed,
         json,
         load,
+        load_contrast,
         mo,
         pd,
         random,
-        read_span,
+        read_case,
+        rows_text,
         torch,
-        verbalize,
     )
 
 
@@ -57,11 +63,12 @@ def _(mo):
 
     The model sees X (R or E) and two readouts, and answers A or B: one
     forward pass per question. The right candidate is X's own J: the
-    advisor's read-out graded against the copy editor's, what deciding
-    adds. Three conditions for the wrong one:
+    advisor's read-out graded against the contrast's (`CONTRAST`, the copy
+    editor by default), what deciding adds. Three conditions for the wrong
+    one:
 
-    - **reversed:** the editor's read-out graded against the advisor's, what
-      paraphrasing adds. Same item, same tokens, same topic.
+    - **reversed:** the contrast's read-out graded against the advisor's,
+      what the contrast adds. Same item, same tokens, same topic.
     - **reversed, foreign X:** the same two candidates, shown with another
       item's X. The control: register and any match to a rationale in
       general are the same here, so the fit is the reversed condition minus
@@ -80,7 +87,7 @@ def _(mo):
 
 
 @app.cell
-def _(datasets):
+def _(contrast_name, datasets):
     MODEL_ID = "Qwen/Qwen3.5-4B"
     DATASET = "ggbetz/cached-reasoning-records"
     SHA = "2d98d41c2e0395eeb871cc3782de24975c54f5d0"
@@ -92,8 +99,10 @@ def _(datasets):
     # Cases whose reversed J has fewer rows are left out: the candidates are
     # cut to the shorter J, and a few rows say little.
     MIN_ROWS = 5
-    # One file per model, so a run doesn't overwrite another model's.
-    OUT = f"discrimination_{MODEL_ID.split('/')[-1]}.json"
+    # A built-in contrast's name, or the path of one's own YAML file.
+    CONTRAST = "editor"
+    # One file per model and contrast, so a run doesn't overwrite another's.
+    OUT = f"discrimination_{MODEL_ID.split('/')[-1]}_{contrast_name(CONTRAST)}.json"
 
     records = datasets.load_dataset(DATASET, revision=SHA, split="train")
     rows = [row for row in records if row["metadata"]["model_id"] == MODEL_ID]
@@ -114,52 +123,46 @@ def _(datasets):
     ]
 
     print(f"{len(item_ids)} items, {len(cases)} cases")
-    return DOSES, DRAWS, MIN_ROWS, MODEL_ID, OUT, cases
+    return CONTRAST, DOSES, DRAWS, MIN_ROWS, MODEL_ID, OUT, cases
 
 
 @app.cell
-def _(LENSES, MODEL_ID, QWEN35, load):
+def _(CONTRAST, LENSES, MODEL_ID, QWEN35, load, load_contrast):
     fmt = QWEN35
     band = LENSES[MODEL_ID].band
-    model, lens = load(MODEL_ID)
+    hf_model, model, lens = load(MODEL_ID)
+    roles = load_contrast(CONTRAST)
 
     print(f"Load {MODEL_ID} ({model.n_layers} layers) with its Jacobian lens.")
-    return band, fmt, lens, model
+    print(f"Contrast {CONTRAST!r}: {', '.join(role.name for role in roles)}.")
+    return band, fmt, hf_model, lens, model, roles
 
 
 @app.cell
-def _(band, cases, fmt, lens, mo, model, read_span, verbalize):
+def _(band, cases, j_and_reversed, lens, mo, model, read_case, roles):
     read = []
     with mo.status.progress_bar(total=len(cases), title="Read out") as _bar:
         for _case in cases:
             _bar.update(increment=0, subtitle=f"{_case['id']}: {_case['kind']}")
-            _args = (model, lens, fmt, _case["kind"], _case["q"], _case["r"])
-            editor = read_span(*_args, editor=True, band=band)
-            advisor = read_span(*_args, band=band)
-            # The same two read-outs, graded both ways. Graded, not by
-            # subtraction: subtraction drops every word both roles produce,
-            # the item's core considerations among them, from both J's.
-            read.append(
-                {
-                    **_case,
-                    "j": verbalize(advisor, against=[editor]),
-                    "reversed": verbalize(editor, against=[advisor]),
-                }
+            advisor, contrast = read_case(
+                model, lens, band, roles, _case["q"], _case["kind"], _case["r"]
             )
+            j, reversed_j = j_and_reversed(advisor, contrast)
+            read.append({**_case, "j": j, "reversed": reversed_j})
             _bar.update()
 
-    print(f"Read out {len(read)} cases as advisor and as copy editor.")
+    print(f"Read out {len(read)} cases as advisor and under the contrast.")
     return (read,)
 
 
 @app.cell
-def _(read):
+def _(read, rows_text):
     _case = next(c for c in read if c["kind"] == "explanation" and c["r"])
 
     print(f"{_case['id']}, explanation, thinking on. J, what deciding adds:\n")
-    print("\n".join(", ".join(_words) for _words in _case["j"]))
-    print("\nReversed J, what paraphrasing adds:\n")
-    print("\n".join(", ".join(_words) for _words in _case["reversed"]))
+    print(rows_text(_case["j"]))
+    print("\nReversed J, what the contrast adds:\n")
+    print(rows_text(_case["reversed"]))
     return
 
 
@@ -184,10 +187,7 @@ def _(MIN_ROWS, pd, read):
 
 
 @app.cell
-def _(fmt):
-    def block(rows):
-        return "\n".join(", ".join(words) + "." for words in rows)
-
+def _(fmt, rows_text):
     def question(kind, x, rows_a, rows_b):
         """The prompt, raw ChatML in the transcripts' format, ending where
         the answer letter goes. Thinking off: one forward pass."""
@@ -198,8 +198,8 @@ def _(fmt):
             f"assistant wrote this {kind}, the other in another conversation. "
             f"Which readout belongs to the {kind}? Answer with A or B.\n\n"
             f"{kind.capitalize()}:\n{x}\n\n"
-            f"Readout A:\n{block(rows_a)}\n\n"
-            f"Readout B:\n{block(rows_b)}"
+            f"Readout A:\n{rows_text(rows_a)}\n\n"
+            f"Readout B:\n{rows_text(rows_b)}"
         )
         return f"{fmt.USER_OPEN}{user}{fmt.TURN_END}\n{fmt.EMPTY_THINK}Answer:"
 
@@ -237,16 +237,15 @@ def _(random):
 
 
 @app.cell
-def _(MAX_SEQ_LEN, mo, model, torch):
+def _(MAX_SEQ_LEN, hf_model, mo, model, torch):
     # Prompts per batch, and padded tokens per batch: a cap on both keeps a
     # batch of long R's within memory.
     BATCH_SIZE = 64
     BATCH_TOKENS = 65536
 
-    # The HF model inside the lens wrapper: its forward takes no attention
-    # mask, which left padding needs. Left-padded batches are how D was
-    # computed for this model (scripts/generate_transcripts.py).
-    hf_model = model._hf_model
+    # The HF model, not the lens wrapper: the wrapper's forward takes no
+    # attention mask, which left padding needs. Left-padded batches are how D
+    # was computed for this model (scripts/generate_transcripts.py).
     tokenizer = model.tokenizer
 
     letters = {}
@@ -300,15 +299,19 @@ def _(MAX_SEQ_LEN, mo, model, torch):
 
 @app.cell
 def _(
+    CONTRAST,
     DOSES,
     DRAWS,
     OUT,
+    asdict,
+    contrast_name,
     diluted,
     json,
     kept,
     log_odds_a,
     question,
     random,
+    roles,
 ):
     # Distractor m and filler k from the same kind and thinking mode, so all
     # candidates were read the same way.
@@ -357,7 +360,15 @@ def _(
         _t["right_first"] = scores[_t.pop("first")]
         _t["right_second"] = -scores[_t.pop("second")]
     with open(OUT, "w") as _f:
-        json.dump({"cases": kept, "trials": trials}, _f)
+        json.dump(
+            {
+                "contrast": contrast_name(CONTRAST),
+                "roles": [asdict(role) for role in roles],
+                "cases": kept,
+                "trials": trials,
+            },
+            _f,
+        )
 
     print(
         f"Asked {len(scores)} distinct questions for {len(trials)} trials; "

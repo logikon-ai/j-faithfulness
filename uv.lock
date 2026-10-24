@@ -933,6 +933,7 @@ source = { editable = "." }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jlens" },
+    { name = "pyyaml" },
     { name = "torch" },
     { name = "transformers" },
     { name = "wordfreq" },
@@ -952,6 +953,7 @@ dev = [
 requires-dist = [
     { name = "huggingface-hub" },
     { name = "jlens", git = "https://github.com/anthropics/jacobian-lens.git?rev=581d398613e5602a5af361e1c34d3a92ea82ba8e" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "torch" },
     { name = "transformers", specifier = ">=5.5" },
     { name = "wordfreq", specifier = ">=3.1.1" },

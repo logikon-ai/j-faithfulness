@@ -1,12 +1,17 @@
 import re
+from types import SimpleNamespace
 
+import jlens
 import pytest
 import torch
 
 from j_faithfulness import lens as lens_module
+from j_faithfulness.contrasts import load_contrast, role_context
+from j_faithfulness.formats import QWEN35
 from j_faithfulness.lens import (
     Segments,
-    align_to_advisor,
+    align,
+    read_case,
     read_out,
     segments,
     sentence_ids,
@@ -15,6 +20,8 @@ from j_faithfulness.lens import (
     units,
     word_ends,
 )
+
+from .tiny import TinyDecoder
 
 
 def test_word_ends():
@@ -78,20 +85,49 @@ def test_segments():
     got = segments(WordTokenizer(), context, " Q ab?", " R ef. gh.")
     assert got == Segments(
         q=[[2], [3], [4]],
-        before_r=[[5], [6], [7]],
+        between=[[5], [6], [7]],
         r=[[8, 9, 10], [11, 12]],
-        after_r=[[13], [14], [15], [16], [17]],
+        after=[[13], [14], [15], [16], [17]],
     )
 
 
-def test_align_to_advisor():
+def test_segments_without_r():
+    context = "Hi. Q ab? <a> D"
+    # Tokens: Hi . _Q _ab ? _< a > _D
+    got = segments(WordTokenizer(), context, " Q ab?", None)
+    assert got == Segments(
+        q=[[2], [3], [4]], between=[], r=[], after=[[5], [6], [7], [8]]
+    )
+
+
+def test_align_with_r():
+    # Explanation, thinking on: Q and R pair; between gets the role's last
+    # unit before R, after gets its last unit.
     advisor = Segments([[0]], [[1], [2]], [[3]], [[4], [5]])
-    editor = Segments([[10]], [[11]], [[12]], [[13], [14], [15]])
-    assert align_to_advisor(advisor, editor) == [[10], [11], [11], [12], [14], [15]]
+    role = Segments([[10]], [[11]], [[12]], [[13], [14], [15]])
+    assert align(advisor, role) == [[10], [11], [11], [12], [15], [15]]
+    # A role with nothing between Q and R: its last unit before R is Q's.
+    assert align(advisor, role._replace(between=[])) == (
+        [[10], [10], [10], [12], [15], [15]]
+    )
+
+
+def test_align_without_r():
+    # Reasoning, and explanation with thinking off: every advisor unit after
+    # Q gets the role's last unit, however many units each side has there.
+    advisor = Segments([[0], [1]], [], [], [[2], [3], [4]])
+    role = Segments([[10], [11]], [], [], [[12], [13]])
+    assert align(advisor, role) == [[10], [11], [13], [13], [13]]
+    assert align(advisor, role._replace(after=[])) == [[10], [11], [11], [11], [11]]
+
+
+def test_align_needs_q_and_r_to_split_alike():
+    advisor = Segments([[0]], [[1]], [[2]], [[3]])
+    role = Segments([[10]], [[11]], [[12]], [[13]])
     with pytest.raises(ValueError):
-        align_to_advisor(advisor, editor._replace(r=[]))
+        align(advisor, role._replace(r=[]))
     with pytest.raises(ValueError):
-        align_to_advisor(advisor, editor._replace(before_r=[]))
+        align(advisor, role._replace(q=[[10], [11]]))
 
 
 def test_read_out_unit_takes_the_max_over_its_positions(tiny):
@@ -149,3 +185,79 @@ def test_top_per_unit_rejects_an_empty_unit(tiny):
     model, _ = tiny
     with pytest.raises(ValueError):
         top_per_unit(torch.randn(3, model.d_model), [[0], []], model.unembed, 5)
+
+
+class CharTokenizer:
+    """One token per ASCII character, its code point, after a BOS: the tiny
+    model's tokenizer with offsets and tokens that decode to their text."""
+
+    bos_token_id = 0
+
+    def __call__(self, text, *, max_length=None, return_offsets_mapping=False, **_kw):
+        ids = [self.bos_token_id] + [ord(c) for c in text]
+        ids = ids[:max_length]
+        if return_offsets_mapping:
+            offsets = [(0, 0)] + [(i, i + 1) for i in range(len(ids) - 1)]
+            return {"input_ids": ids, "offset_mapping": offsets}
+        return SimpleNamespace(input_ids=torch.tensor([ids]))
+
+    def decode(self, ids, **_kw):
+        return "".join(chr(int(i)) for i in ids)
+
+
+@pytest.fixture(scope="module")
+def tiny_chars():
+    model = TinyDecoder(n_layers=6, d_model=8, vocab_size=128)
+    model.tokenizer = CharTokenizer()
+    lens = jlens.fit(
+        model,
+        ["abcdefghij " * 5],
+        source_layers=[0, 1, 2, 3, 4],
+        dim_batch=4,
+        max_seq_len=64,
+    )
+    return model, lens
+
+
+CASE_Q = "Should I tell my friend?\n\nA. Tell her.\nB. Don't tell her."
+CASE_R = "She trusts me. But it would hurt her!\n\nSo what matters more?\nHonesty."
+CASES = {
+    "reasoning": ("reasoning", CASE_R),
+    "explanation, thinking off": ("explanation", None),
+    "explanation, thinking on": ("explanation", CASE_R),
+}
+
+
+@pytest.mark.parametrize("contrast", ["editor", "advocates"])
+@pytest.mark.parametrize("case", CASES)
+def test_read_case(tiny_chars, contrast, case):
+    model, lens = tiny_chars
+    kind, r = CASES[case]
+    roles = load_contrast(contrast)
+    advisor, readouts = read_case(model, lens, (1, 3), roles, CASE_Q, kind, r)
+
+    read_r = r if kind == "explanation" else None
+    advisor_context = (
+        QWEN35.reasoning_prompt(CASE_Q)
+        if kind == "reasoning"
+        else QWEN35.decision_prompt(CASE_Q, r)
+    )
+    assert advisor.context == advisor_context
+    assert [c.context for c in readouts] == [
+        role_context(role, CASE_Q, read_r) for role in roles
+    ]
+
+    advisor_segments = segments(model.tokenizer, advisor_context, CASE_Q, read_r)
+    q_units = len(advisor_segments.q)
+    n_units = sum(len(part) for part in advisor_segments)
+    assert advisor.q_units == q_units
+    assert len(advisor.top) == n_units
+    for readout in readouts:
+        assert readout.q_units == q_units
+        assert len(readout.top) == n_units
+        # Every advisor unit after the last of Q and R reads the role's last.
+        after = readout.top[n_units - len(advisor_segments.after) :]
+        assert all(unit == after[-1] for unit in after)
+        # Every advisor unit between Q and R reads one unit of the role's.
+        between = readout.top[q_units : q_units + len(advisor_segments.between)]
+        assert all(unit == between[0] for unit in between)

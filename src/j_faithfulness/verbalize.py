@@ -1,14 +1,16 @@
-"""LatentReadout → J: one row of ranked words per unit.
+"""Readouts → J and the reversed J: one row of ranked words per unit
+(DESIGN.md, Latent readout, Keyword rows).
 
-Each ranked list of the read-out (one unit, one layer) is a document. At a
+Each ranked list of a readout (one unit, one layer) is a document. At a
 unit, a word's TF sums its reciprocal ranks over the layers, and IDF counts
 the documents of Q's other units that contain it, so a concept that persists
 through the layers doesn't raise its own count.
 
-Graded against read-outs of the same text under other roles (DESIGN.md,
-Latent readout), a word's TF at a unit is reduced by its highest TF at the
-same unit of any of them (:func:`grade`). Graded, not by dropping their
-words: a consideration both roles carry stays where one weighs it more.
+J grades the advisor's readout against the contrast's, and the reversed J
+the contrast's against the advisor's: a word's TF at a unit is reduced by its
+TF at the same unit on the other side (:func:`grade`). Graded, not by
+dropping the other side's words: a consideration both sides carry stays
+where one weighs it more.
 """
 
 from __future__ import annotations
@@ -102,7 +104,7 @@ def document(ranked: list[str]) -> dict[str, tuple[int, str]]:
     return best
 
 
-def term_freqs(readout: LatentReadout) -> list[dict[str, tuple[float, str]]]:
+def readout_term_freqs(readout: LatentReadout) -> list[dict[str, tuple[float, str]]]:
     """Per unit: ``{casefolded word: (tf, form at its best rank)}``, TF
     summing the word's reciprocal ranks over the layers."""
     out = []
@@ -118,95 +120,134 @@ def term_freqs(readout: LatentReadout) -> list[dict[str, tuple[float, str]]]:
     return out
 
 
-def tf_idf(readout: LatentReadout) -> list[dict[str, tuple[float, float]]]:
-    """Per unit: ``{word: (tf, idf)}``, each word in the form it has at its
-    best rank there.
+def check_aligned(readouts: list[LatentReadout]) -> None:
+    if not readouts:
+        raise ValueError("no readouts")
+    if len({(len(r.top), r.q_units) for r in readouts}) > 1:
+        raise ValueError("readouts have different numbers of units or of Q's units")
+
+
+def term_freqs(readouts: list[LatentReadout]) -> list[dict[str, tuple[float, str]]]:
+    """Per unit: ``{casefolded word: (tf, form)}``, the word's highest TF
+    over ``readouts`` and its form there. Max, not mean: roles that divide
+    an activity, like the two advocates, each carry only their side's
+    words, and a mean would halve them."""
+    check_aligned(readouts)
+    pooled: list[dict[str, tuple[float, str]]] = [{} for _ in readouts[0].top]
+    for readout in readouts:
+        for unit, tfs in zip(pooled, readout_term_freqs(readout), strict=True):
+            for key, (tf, form) in tfs.items():
+                if key not in unit or tf > unit[key][0]:
+                    unit[key] = (tf, form)
+    return pooled
+
+
+def idf(readouts: list[LatentReadout]) -> list[dict[str, float]]:
+    """Per unit: ``{casefolded word: idf}`` for the words of that unit in any
+    of ``readouts``.
 
     IDF is ``log((N + 1) / (df + 1))`` over the documents of Q's units (the
-    first ``readout.q_units``), the scored unit's own left out;
-    with no documents left it is 1. IDF from Q alone, so a consideration
-    that recurs across R's sentences isn't scored down, and R's denser merged
-    documents don't skew it (DESIGN.md, Keyword rows, step 2).
+    first ``q_units``) of all ``readouts`` together, the scored unit's own
+    left out; with no documents left it is 1. One pool for a side's roles, so
+    no rule picks one role's IDF. Q alone, so a consideration that recurs
+    across R's sentences isn't scored down, and R's denser merged documents
+    don't skew it.
     """
-    docs = [[document(ranked) for ranked in layers] for layers in readout.top]
-    base = docs[: readout.q_units]
-    df = Counter(key for layers in base for d in layers for key in d)
-    n = sum(len(layers) for layers in base)
+    check_aligned(readouts)
+    q_units = readouts[0].q_units
+    # docs[u]: the documents of unit u over all readouts and layers.
+    docs = [
+        [document(ranked) for readout in readouts for ranked in readout.top[u]]
+        for u in range(len(readouts[0].top))
+    ]
+    df = Counter(key for unit in docs[:q_units] for d in unit for key in d)
+    n = sum(len(unit) for unit in docs[:q_units])
     out = []
-    for row, (layers, tfs) in enumerate(zip(docs, term_freqs(readout), strict=True)):
-        in_base = row < readout.q_units
-        own = Counter(key for d in layers for key in d) if in_base else Counter()
-        n_rest = n - len(layers) if in_base else n
+    for u, unit in enumerate(docs):
+        found = Counter(key for d in unit for key in d)
+        own = found if u < q_units else Counter()
+        n_rest = n - len(unit) if u < q_units else n
         out.append(
             {
-                word: (
-                    t,
-                    math.log((n_rest + 1) / (df[key] - own[key] + 1))
-                    if n_rest
-                    else 1.0,
-                )
-                for key, (t, word) in tfs.items()
+                key: math.log((n_rest + 1) / (df[key] - own[key] + 1))
+                if n_rest
+                else 1.0
+                for key in found
             }
         )
     return out
 
 
 def grade(
-    readout: LatentReadout, *against: LatentReadout
+    tfs: list[dict[str, tuple[float, str]]],
+    against: list[dict[str, tuple[float, str]]],
+    idfs: list[dict[str, float]],
 ) -> list[dict[str, tuple[float, float]]]:
-    """Per unit: ``{word: (tf, score)}``, the score ``(tf - tf_against) ×
-    idf``. ``tf_against`` is the word's highest TF at the same unit of any
-    read-out in ``against`` (0 where it isn't among its top tokens): max, not
-    mean, so one role that carries the word explains it away. IDF is the
-    read-out's own (see :func:`tf_idf`).
-
-    The read-outs must have their units in the same order, one to one. Their
-    words may differ: the copy editor reads R in the user turn, so its
-    template sits elsewhere (:func:`j_faithfulness.lens.align_to_advisor`).
-    """
-    for other in against:
-        if len(other.top) != len(readout.top):
-            raise ValueError("read-outs have different numbers of units")
-    against_tfs = [term_freqs(other) for other in against]
-
-    def tf_against(u: int, word: str) -> float:
-        return max(
-            (a[u].get(word.casefold(), (0.0,))[0] for a in against_tfs), default=0.0
-        )
-
+    """Per unit: ``{form: (tf, score)}``, the score ``(tf - tf_against) ×
+    idf``, ``tf_against`` 0 where the word isn't among the other side's
+    top tokens."""
     return [
         {
-            word: (tf, (tf - tf_against(u, word)) * idf)
-            for word, (tf, idf) in scored.items()
+            form: (tf, (tf - other.get(key, (0.0,))[0]) * unit_idf[key])
+            for key, (tf, form) in unit.items()
         }
-        for u, scored in enumerate(tf_idf(readout))
+        for unit, other, unit_idf in zip(tfs, against, idfs, strict=True)
     ]
 
 
-def verbalize(readout: LatentReadout, against: list[LatentReadout]) -> list[list[str]]:
-    """J: per unit, up to K words by :func:`grade`, best first; units left
-    without words are omitted.
+def keyword_rows(
+    scored: list[dict[str, tuple[float, float]]], echo_words: set[str]
+) -> list[list[str]]:
+    """Per unit, up to K words, best first; units left without words are
+    omitted.
 
-    A word needs TF ≥ MIN_TF and a score ≥ MIN_SCORE. Left out are words of
-    the context and their variants (at a word of Q the lens partly predicts
-    Q's next word), words in other scripts (mostly translations of English
+    A word needs TF ≥ MIN_TF and a score ≥ MIN_SCORE. Left out are words
+    that echo ``echo_words`` (at a word of Q the lens partly predicts Q's
+    next word), words in other scripts (mostly translations of English
     ones), and words that aren't English (see :func:`is_english`).
     """
-    context_words = words(readout.context)
 
     def keep(w: str) -> bool:
-        return not echoes(w, context_words) and is_latin(w) and is_english(w)
+        return not echoes(w, echo_words) and is_latin(w) and is_english(w)
 
-    j = []
-    for scored in grade(readout, *against):
+    rows = []
+    for unit in scored:
         ranked = sorted(
             (
                 (score, w)
-                for w, (tf, score) in scored.items()
+                for w, (tf, score) in unit.items()
                 if tf >= MIN_TF and score >= MIN_SCORE and keep(w)
             ),
             key=lambda sw: -sw[0],
         )
         if ranked:
-            j.append([w for _, w in ranked[:K]])
-    return j
+            rows.append([w for _, w in ranked[:K]])
+    return rows
+
+
+def j_and_reversed(
+    advisor: LatentReadout, contrast: list[LatentReadout]
+) -> tuple[list[list[str]], list[list[str]]]:
+    """J and the reversed J of one case, from the advisor's readout and the
+    contrast roles' (aligned, see :func:`j_faithfulness.lens.read_case`).
+
+    J grades the advisor's TF against the contrast's highest TF over its
+    roles, with the advisor's IDF. The reversed J grades that highest TF
+    against the advisor's, with IDF over all roles' readouts. Both sides
+    drop the words of every context read, so of Q, R and every role line:
+    no side's own words tell J from the reversed J.
+    """
+    check_aligned([advisor, *contrast])
+    advisor_tfs = term_freqs([advisor])
+    contrast_tfs = term_freqs(contrast)
+    echo_words = set().union(*(words(r.context) for r in [advisor, *contrast]))
+    j = keyword_rows(grade(advisor_tfs, contrast_tfs, idf([advisor])), echo_words)
+    reversed_j = keyword_rows(
+        grade(contrast_tfs, advisor_tfs, idf(contrast)), echo_words
+    )
+    return j, reversed_j
+
+
+def rows_text(rows: list[list[str]]) -> str:
+    """A readout as the model sees it: one row per line."""
+    return "\n".join(", ".join(row) + "." for row in rows)
