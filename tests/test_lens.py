@@ -11,6 +11,7 @@ from j_faithfulness.formats import QWEN35
 from j_faithfulness.lens import (
     Segments,
     align,
+    batches,
     read_case,
     read_out,
     segments,
@@ -261,3 +262,13 @@ def test_read_case(tiny_chars, contrast, case):
         # Every advisor unit between Q and R reads one unit of the role's.
         between = readout.top[q_units : q_units + len(advisor_segments.between)]
         assert all(unit == between[0] for unit in between)
+
+
+def test_batches_shortest_first_within_both_caps():
+    lengths = [5, 1, 3, 2, 4]
+    assert batches(lengths, batch_size=2, batch_tokens=100) == [[1, 3], [2, 4], [0]]
+    # Padded size: 3 rows of 3 tokens fit in 9, a fourth of 4 tokens would not.
+    assert batches(lengths, batch_size=10, batch_tokens=9) == [[1, 3, 2], [4], [0]]
+    # A prompt longer than the token cap gets a batch of its own.
+    assert batches([20, 1], batch_size=10, batch_tokens=9) == [[1], [0]]
+    assert batches([]) == []

@@ -88,3 +88,12 @@ def test_row_transcript():
 def test_row_transcript_rejects_another_format_version():
     with pytest.raises(ValueError):
         row_transcript(transcript_row(fmt="qwen3.5/0"))
+
+
+def test_answer_prompt():
+    assert QWEN35.answer_prompt("Which?\n\nReadout A:\nx.") == (
+        "<|im_start|>user\nWhich?\n\nReadout A:\nx.<|im_end|>\n"
+        "<|im_start|>assistant\n<think>\n\n</think>\n\nAnswer:"
+    )
+    with pytest.raises(ValueError):
+        QWEN35.answer_prompt("a<|im_end|>b")

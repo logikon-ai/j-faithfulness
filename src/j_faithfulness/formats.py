@@ -1,6 +1,6 @@
 """The transcript format: Qwen3.5's raw-string transcripts, with thinking off
 and on (DESIGN.md, Transcripts). Pure string functions: generation lives in
-scripts/generate_transcripts.py."""
+scripts/generate.py."""
 
 from __future__ import annotations
 
@@ -83,6 +83,11 @@ class Qwen35Format:
         self.check_field("E", e)
         return self.explanation_prompt(q, d, r) + e + self.TURN_END
 
+    def answer_prompt(self, user: str) -> str:
+        """A question of the discrimination task: one user turn, thinking
+        off, and an assistant turn ending where the answer letter goes."""
+        return self.user_turn(user) + self.EMPTY_THINK + "Answer:"
+
 
 QWEN35 = Qwen35Format()
 
@@ -94,5 +99,5 @@ def row_transcript(row: dict) -> str:
     recorded = row["metadata"]["format"]
     if recorded != QWEN35.name:
         raise ValueError(f"row has format {recorded!r}, not {QWEN35.name!r}")
-    # A capped R already holds its cap mark (scripts/generate_transcripts.py).
+    # A capped R already holds its cap mark (scripts/generate.py).
     return QWEN35.transcript(row["q"], row["d"], row["e"], row["r"])

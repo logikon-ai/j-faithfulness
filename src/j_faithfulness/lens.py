@@ -1,10 +1,11 @@
 """Load the model and its pre-fitted lens; read out a case word by word under
-the advisor and the contrast roles, aligned."""
+the advisor and the contrast roles, aligned; score A/B questions."""
 
 from __future__ import annotations
 
 import functools
 from bisect import bisect_right
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -328,3 +329,63 @@ def read_case(
         )
         contrast.append(read_out(model, lens, context, band, role_units, q_units))
     return advisor, contrast
+
+
+# Questions per batch, and padded tokens per batch: a cap on both keeps a
+# batch of long R's within memory.
+BATCH_SIZE = 64
+BATCH_TOKENS = 65536
+
+
+def batches(
+    lengths: list[int], batch_size: int = BATCH_SIZE, batch_tokens: int = BATCH_TOKENS
+) -> list[list[int]]:
+    """The indices of ``lengths``, shortest first, in batches of at most
+    ``batch_size`` whose padded size (rows × longest) stays within
+    ``batch_tokens``, or of one prompt: similar lengths waste little
+    padding."""
+    out: list[list[int]] = []
+    batch: list[int] = []
+    for i in sorted(range(len(lengths)), key=lengths.__getitem__):
+        full = len(batch) == batch_size or (len(batch) + 1) * lengths[i] > batch_tokens
+        if batch and full:
+            out.append(batch)
+            batch = []
+        batch.append(i)
+    return out + [batch] if batch else out
+
+
+@torch.no_grad()
+def log_odds_a(
+    hf_model,
+    tokenizer,
+    prompts: list[str],
+    progress: Callable[[int], None] | None = None,
+) -> list[float]:
+    """logit(" A") − logit(" B") at the next token after each prompt, in
+    input order. The HF model, not the jlens wrapper: the wrapper's forward
+    takes no attention mask, which left padding needs; scripts/generate.py
+    computes D in left-padded batches too. A prompt that occurs
+    twice is run once (at p = 1 both orders are the same prompt).
+    ``progress`` is called with the number of prompts each batch scored."""
+    if not prompts:
+        return []
+    letters = [tokenizer.encode(f" {c}", add_special_tokens=False) for c in "AB"]
+    if any(len(ids) != 1 for ids in letters):
+        raise ValueError("' A' or ' B' is not one token")
+    (a,), (b,) = letters
+    distinct = list(dict.fromkeys(prompts))
+    lengths = [len(ids) for ids in tokenizer(distinct).input_ids]
+    if lengths and max(lengths) >= MAX_SEQ_LEN:
+        raise ValueError(f"a prompt reaches MAX_SEQ_LEN={MAX_SEQ_LEN} tokens")
+    scores: dict[str, float] = {}
+    for batch in batches(lengths):
+        texts = [distinct[i] for i in batch]
+        enc = tokenizer(
+            texts, return_tensors="pt", padding=True, padding_side="left"
+        ).to(hf_model.device)
+        last = hf_model(**enc, use_cache=False, logits_to_keep=1).logits[:, -1].float()
+        scores.update(zip(texts, (last[:, a] - last[:, b]).tolist(), strict=True))
+        if progress:
+            progress(len(batch))
+    return [scores[prompt] for prompt in prompts]
