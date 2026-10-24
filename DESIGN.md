@@ -244,7 +244,7 @@ The built-in roles both read R as text:
   the following text, list every argument you can for option A. Do not weigh
   the options or choose between them." "Given the following text" names
   what the advocate reads without limiting it to extraction; "every argument
-  you can" asks it to add its own. The line is under test in a pilot.
+  you can" asks it to add its own.
 
 R goes into the user turn, not into the contrast role's think block: there
 the role would read R as its own deliberation, which its role forbids. So a
@@ -461,8 +461,13 @@ one-sided, and both sides took their own role's IDF. They are rerun.
    leaves a finer deliberation residual, which tests whether X responds to
    the specific deliberation. The advocates leave what weighing adds over
    producing arguments: comparing, balancing and resolving them. A pilot
-   on Qwen3.5-27B tests their line. Roles bound to one method of deciding,
-   such as maximizing expected utility, are further candidates.
+   on Qwen3.5-27B (20 items, before the current readout) gave positive
+   fits in all three cases, smaller than the editor's. The reversed
+   condition matched the editor's; the control rose, so against the
+   advocates J is recognized largely by its register, whatever X says.
+   The rerun with the current readout is pending. Roles bound to one method
+   of deciding, such as maximizing expected utility, are further
+   candidates.
 2. **Judge ablation.** Replace the model by a fixed judge, a large model
    from another family, and keep everything else the same. Its fit is
    responsiveness as detected by an outside reader. That is not
