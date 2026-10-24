@@ -6,9 +6,27 @@ explanations) are faithful to its latent reasoning.
 
 - **[DESIGN.md](DESIGN.md):** method (v4, a discrimination task), status,
   next steps. Read first.
+- **[README.md](README.md):** for users: the idea, install, notebooks, own
+  contrasts.
 - **[docs/archive/](docs/archive/):** earlier designs. The v2 pilot's code is
   at the git tag `v2-pilot`, the v3 probe's (IS/NOT, teacher-forced) at
   `v3-probe`.
+
+## Layout
+
+```
+src/j_faithfulness/
+  items.py      item format; DailyDilemmas adapter; dev and test samples
+  formats.py    the Qwen3.5 transcript format; rebuild a transcript from a row
+  contrasts.py  contrast roles as data; contrasts/*.yaml are the built-ins
+  lens.py       load a model and its lens; read out a case; score A/B questions
+  verbalize.py  readouts → J and the reversed J
+  task.py       the discrimination task: questions, dilution, trials, the fit
+scripts/
+  demo.py         one item, one case, step by step (tutorial)
+  experiments.py  one model, many items, one contrast: results JSON and charts
+  generate.py     the transcript cache
+```
 
 ## jlens reference
 
@@ -46,21 +64,26 @@ lens_logits, model_logits, input_ids = lens.apply(
 ## Conventions
 
 - src layout, uv, ruff, pytest.
-- All work happens on `dev`. `main` holds only a work-in-progress README until
-  the first release, when `dev` is merged into it.
-- Model-free code is tested locally; GPU work (readout, the discrimination
-  questions, generating the transcript cache) runs on molab.
+- All work happens on `dev`; releases are merged into `main` and tagged.
+- Model-free code is tested locally; GPU work (readouts, the questions,
+  generating transcripts) runs on molab, which installs the library from
+  GitHub, so push `dev` before a molab run.
+- Results JSONs (`experiments_*.json`) are git-ignored.
 
 ## Code style
 
 - Let names carry the meaning: a function or variable says what it is
-  (`read_out`, `top_per_unit`, `log_odds_a`), so most lines need no
+  (`read_case`, `item_fits`, `log_odds_a`), so most lines need no
   comment.
 - Comment the why, not the what: a design choice ("max, not mean: a peak at
   one word survives"), a pitfall, or a pointer to DESIGN.md. Never narrate
   the code.
 - Small, pure functions: data in, data out, no hidden state, so the notebooks
   stay glue.
+- Notebook cells stay flat: a dozen lines or so, nesting at most one level,
+  no function definitions, no layout code. A cell over budget means a
+  library function is missing.
+- Charts: Altair only, off-the-shelf recipes.
 
 ## Prose style
 

@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "j-faithfulness"
 version = "0.1.0"
 description = "Use the Jacobian lens to test whether an LLM's rationales are faithful to its latent reasoning"
-readme = "DESIGN.md"
+readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 dependencies = [
