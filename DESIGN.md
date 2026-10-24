@@ -371,9 +371,11 @@ reading R as text. At full signal:
    words Q′ adds. A change that moves neither D nor `d_probs` may leave J′
    close to J, so the size of the change is measured by the shift in
    `d_probs`. It gives a dose axis next to dilution.
-2. **A fixed judge.** Qwen3.5-27B as judge on the 4B's data. This tests
+2. **A fixed judge.** A large model from another family, such as a
+   Gemma 4 or a Mistral model, as judge on the 4B's data. This tests
    whether the null for reasoning comes from the small judge, and shows how
-   much the fit depends on the judge. A fixed judge makes subjects
+   much the fit depends on the judge. A judge from another family cannot
+   share the subject's habits of wording. A fixed judge makes subjects
    comparable.
 3. **Qwen3.5-27B as subject.** A lens exists
    (`qwen3.5-27b/jlens/Salesforce-wikitext/Qwen3.5-27B_jacobian_lens.pt`,
