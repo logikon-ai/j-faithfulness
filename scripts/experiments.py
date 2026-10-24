@@ -64,29 +64,26 @@ def _():
 @app.cell
 def _(mo):
     mo.md(r"""
-    # Can the model tell which readout belongs to a rationale?
+    # j-faithfulness of one model, at one contrast
 
-    The model sees X (R or E) and two readouts, and answers A or B: one
-    forward pass per question. The right candidate is X's own J: the
-    advisor's read-out graded against the contrast's (`CONTRAST`, the copy
-    editor by default), what deciding adds. Three conditions for the wrong
-    one:
+    Runs the discrimination task for one model over many items, at one
+    contrast, and reports the fit per case. For a walkthrough of a single
+    item, see `demo.py`; for the method, DESIGN.md.
 
-    - **reversed:** the contrast's read-out graded against the advisor's,
-      what the contrast adds. Same item, same tokens, same topic.
-    - **reversed, foreign X:** the same two candidates, shown with another
-      item's X. The control: register and any match to a rationale in
-      general are the same here, so the fit is the reversed condition minus
-      this one.
-    - **foreign:** another item's J. Different topic.
+    Set `MODEL_ID` and `CONTRAST` below (a built-in name or the path of your
+    own YAML). The run writes `experiments_{model}_{contrast}.json` with the
+    trials and a record of the run. It needs a GPU.
 
-    Both candidates are diluted the same way: a fraction p of their rows, at
-    the same places, is replaced by the rows of a third item's J. The signal
-    fraction 1 − p sets the difficulty; at p = 1 both candidates are the same
-    and the answer is at chance.
+    The model sees a rationale X and two readouts and answers A or B. The
+    right candidate is always X's own J. The conditions:
 
-    Each question is asked in both orders, and the log-odds of the right
-    answer are averaged over them, which cancels a bias towards A or B.
+    | condition | wrong candidate | X shown | measures |
+    |---|---|---|---|
+    | foreign | another item's J | own | topic and more: the calibration |
+    | reversed | the reversed J | own | fit beyond topic |
+    | reversed, foreign X | the reversed J | another item's | register: the control |
+
+    The fit is reversed minus reversed, foreign X, per item, at full signal.
     """)
     return
 
@@ -254,6 +251,21 @@ def _(OUT, json, kept, results, run):
         json.dump({"run": run, "cases": kept, "trials": results}, _f)
 
     print(f"Wrote the run, {len(kept)} cases and {len(results)} trials to {OUT}.")
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Results
+
+    The charts show means over items with ± 1 standard error. Each question
+    is asked in both orders and the log-odds of the right answer are
+    averaged, which cancels a bias towards A or B. Both candidates are
+    diluted the same way: a fraction p of their rows is replaced by a third
+    item's J. The signal fraction 1 − p sets the difficulty; at 0 both
+    candidates are the same and the answer is at chance.
+    """)
     return
 
 
