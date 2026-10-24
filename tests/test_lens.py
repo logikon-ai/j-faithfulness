@@ -4,14 +4,13 @@ import pytest
 import torch
 
 from j_faithfulness import lens as lens_module
-from j_faithfulness.formats import Span
 from j_faithfulness.lens import (
     Segments,
     align_to_advisor,
     read_out,
     segments,
     sentence_ids,
-    skipped_tokens,
+    tokenize,
     top_per_unit,
     units,
     word_ends,
@@ -23,40 +22,29 @@ def test_word_ends():
     assert word_ends(tokens) == [0, 1, 2, 3, 5, 6, 7]
 
 
-def test_skipped_tokens():
-    tokens = ["<|im_start|>", "user", "\n", "Q", "?"]
-    assert skipped_tokens(tokens, "<|im_start|>user\n") == 3
-    assert skipped_tokens(tokens, "") == 0
-    assert skipped_tokens(tokens, "<|im_start|>us") == 0  # not a token boundary
-    assert skipped_tokens(tokens, "<|im_start|>system\n") == 0
-    assert skipped_tokens(tokens, "<|im_start|>user\nQ?") == 5
-
-
 def test_read_out(tiny):
     model, lens = tiny
     context = "the quick brown fox"
-    r = read_out(model, lens, context, band=(1, 3), positions=[-1, 4], top_n=5)
-    assert r.layers == [1, 2, 3]
-    assert r.positions == [len(context), 4]  # + BOS, so -1 is len(context)
-    assert len(r.context_tokens) == len(context) + 1
-    assert [[len(t) for t in layers] for layers in r.top] == [[5, 5, 5], [5, 5, 5]]
+    r = read_out(model, lens, context, band=(1, 3), units=[[19], [4]], q_units=1)
+    assert r.context == context
+    assert r.q_units == 1
+    # Three layers per unit; the tiny vocabulary is smaller than TOP_N.
+    assert [[len(t) for t in layers] for layers in r.top] == [[32] * 3, [32] * 3]
     # Matches the lens at that position and layer.
     logits, _, _ = lens.apply(model, context, layers=[2], positions=[4])
-    expected = [model.tokenizer.decode([i]) for i in logits[2][0].topk(5).indices]
+    expected = [model.tokenizer.decode([i]) for i in logits[2][0].topk(32).indices]
     assert r.top[1][1] == expected
-
-
-def test_read_out_defaults_to_word_ends(tiny):
-    model, lens = tiny
-    r = read_out(model, lens, "ab cd", band=(4, 4), top_n=5)
-    assert r.positions == word_ends(r.context_tokens)
 
 
 def test_read_out_long_context_is_not_truncated(tiny):
     model, lens = tiny
     # The tiny tokenizer is byte-level: 600 chars is past jlens's default 512.
-    r = read_out(model, lens, "a" * 599 + "b", band=(4, 4), positions=[-1], top_n=5)
-    assert r.positions == [600]
+    r = read_out(model, lens, "a" * 599 + "b", band=(4, 4), units=[[600]], q_units=1)
+    logits, _, _ = lens.apply(
+        model, "a" * 599 + "b", layers=[4], positions=[600], max_seq_len=1024
+    )
+    expected = [model.tokenizer.decode([i]) for i in logits[4][0].topk(32).indices]
+    assert r.top[0][0] == expected
 
 
 class WordTokenizer:
@@ -76,16 +64,12 @@ class WordTokenizer:
 
 def test_units():
     context = "Hi. Q ab cd? R ef. gh.\nE"
-    start, r = context.index(" Q"), Span(context.index(" R"), context.index("\nE"))
+    start, r = context.index(" Q"), range(context.index(" R"), context.index("\nE"))
+    tokens, offsets = tokenize(WordTokenizer(), context)
     # Tokens: Hi . _Q _ab _cd ? | _R _ef . _gh . | \n E
-    got = units(WordTokenizer(), context, start, sentences=r)
+    got = units(tokens, offsets, start, sentences=r)
     assert got == [[2], [3], [4], [5], [6, 7, 8], [9, 10], [11], [12]]
-    assert units(WordTokenizer(), context, start, sentences=r, end=r.start) == [
-        [2],
-        [3],
-        [4],
-        [5],
-    ]
+    assert units(tokens, offsets, start) == [[p] for p in range(2, 13)]
 
 
 def test_segments():
@@ -113,15 +97,13 @@ def test_align_to_advisor():
 def test_read_out_unit_takes_the_max_over_its_positions(tiny):
     model, lens = tiny
     context = "the quick brown fox"
-    r = read_out(model, lens, context, band=(2, 3), units=[[2, 3, 4], [6]], top_n=5)
-    assert r.positions == [4, 6]
-    assert r.units == [[2, 3, 4], [6]]
+    r = read_out(model, lens, context, band=(2, 3), units=[[2, 3, 4], [6]], q_units=2)
     logits, _, _ = lens.apply(model, context, layers=[3], positions=[2, 3, 4])
     peak = logits[3].log_softmax(-1).amax(0)
-    expected = [model.tokenizer.decode([i]) for i in peak.topk(5).indices]
+    expected = [model.tokenizer.decode([i]) for i in peak.topk(32).indices]
     assert r.top[0][1] == expected
     # A unit of one position reads out as that position.
-    single = read_out(model, lens, context, band=(2, 3), positions=[6], top_n=5)
+    single = read_out(model, lens, context, band=(2, 3), units=[[6]], q_units=1)
     assert r.top[1] == single.top[0]
 
 

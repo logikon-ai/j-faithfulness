@@ -29,17 +29,16 @@ def _():
     import pandas as pd
     import torch
 
-    from j_faithfulness.formats import FORMATS
+    from j_faithfulness.formats import QWEN35
     from j_faithfulness.lens import LENSES, MAX_SEQ_LEN, load, read_span
-    from j_faithfulness.verbalize import fence, verbalize
+    from j_faithfulness.verbalize import verbalize
 
     return (
-        FORMATS,
         LENSES,
         MAX_SEQ_LEN,
+        QWEN35,
         alt,
         datasets,
-        fence,
         json,
         load,
         mo,
@@ -119,8 +118,8 @@ def _(datasets):
 
 
 @app.cell
-def _(FORMATS, LENSES, MODEL_ID, load):
-    fmt = FORMATS[MODEL_ID]
+def _(LENSES, MODEL_ID, QWEN35, load):
+    fmt = QWEN35
     band = LENSES[MODEL_ID].band
     model, lens = load(MODEL_ID)
 
@@ -154,13 +153,13 @@ def _(band, cases, fmt, lens, mo, model, read_span, verbalize):
 
 
 @app.cell
-def _(fence, read):
+def _(read):
     _case = next(c for c in read if c["kind"] == "explanation" and c["r"])
 
     print(f"{_case['id']}, explanation, thinking on. J, what deciding adds:\n")
-    print(fence(_case["j"]))
+    print("\n".join(", ".join(_words) for _words in _case["j"]))
     print("\nReversed J, what paraphrasing adds:\n")
-    print(fence(_case["reversed"]))
+    print("\n".join(", ".join(_words) for _words in _case["reversed"]))
     return
 
 
@@ -177,16 +176,7 @@ def _(MIN_ROWS, pd, read):
             for c in read
         ]
     )
-    # Plain word lists from here on: the candidates mix rows of several J's.
-    kept = [
-        {
-            **c,
-            "j": [r.words for r in c["j"]],
-            "reversed": [r.words for r in c["reversed"]],
-        }
-        for c in read
-        if min(len(c["j"]), len(c["reversed"])) >= MIN_ROWS
-    ]
+    kept = [c for c in read if min(len(c["j"]), len(c["reversed"])) >= MIN_ROWS]
 
     print(f"Rows per J; {len(kept)} of {len(read)} cases have ≥ {MIN_ROWS} in both:")
     row_counts

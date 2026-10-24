@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+from bisect import bisect_right
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -10,7 +11,7 @@ import jlens
 import torch
 from jlens.hooks import ActivationRecorder
 
-from j_faithfulness.formats import Kind, Span, TranscriptFormat
+from j_faithfulness.formats import Kind, Qwen35Format
 
 LENS_REPO = "neuronpedia/jacobian-lens"
 LENS_REVISION = "qwen-n1000"
@@ -82,28 +83,24 @@ def load(model_id: str):
     return model, lens
 
 
-@dataclass
+# Raw tokens kept per unit and layer: enough for word-like ones to remain
+# once the rest is filtered out.
+TOP_N = 200
+
+
+@dataclass(frozen=True)
 class LatentReadout:
-    """Lens read-out over a span of positions.
+    """Lens read-out over the units of a context (DESIGN.md, Units).
 
-    ``top[i][j]`` are the decoded top tokens at ``positions[i]`` and
-    ``layers[j]``, in rank order (index = rank), unfiltered;
-    :func:`j_faithfulness.verbalize.verbalize` turns them into J.
-    ``context_tokens`` is the whole context, decoded token by token.
-
-    Each position stands for a unit (DESIGN.md, Units): ``units[i]`` holds
-    its positions, of which ``positions[i]`` is the last; None means every
-    unit is its one position. The first ``q_units`` units are Q's, which IDF
-    is taken over; None means all.
+    ``top[u][j]`` are the decoded top tokens of unit ``u`` at the band's
+    ``j``-th layer, in rank order (index = rank), unfiltered;
+    :func:`j_faithfulness.verbalize.verbalize` turns them into J. The first
+    ``q_units`` units are Q's, which IDF is taken over.
     """
 
     context: str
-    context_tokens: list[str]
-    positions: list[int]
-    layers: list[int]
     top: list[list[list[str]]]
-    units: list[list[int]] | None = None
-    q_units: int | None = None
+    q_units: int
 
 
 def word_ends(tokens: list[str]) -> list[int]:
@@ -116,19 +113,6 @@ def word_ends(tokens: list[str]) -> list[int]:
         if not continues:
             ends.append(i)
     return ends
-
-
-def skipped_tokens(tokens: list[str], skip: str) -> int:
-    """The number of leading tokens that spell out ``skip`` exactly (0 if they
-    don't)."""
-    text = ""
-    for i, token in enumerate(tokens):
-        if text == skip:
-            return i
-        text += token
-        if not skip.startswith(text):
-            return 0
-    return len(tokens) if text == skip else 0
 
 
 def sentence_ids(tokens: list[str]) -> list[int]:
@@ -147,31 +131,31 @@ def sentence_ids(tokens: list[str]) -> list[int]:
     return ids
 
 
-def units(
-    tokenizer,
-    context: str,
-    start: int,
-    sentences: Span | None = None,
-    end: int | None = None,
-) -> list[list[int]]:
-    """The read-out units of ``context`` from character ``start`` on
-    (DESIGN.md, Units): each word is one unit at its last token, and within
-    ``sentences`` (R) each sentence is one unit of all its tokens. With
-    ``end``, only the units that start before it, e.g. Q's.
-
-    ``tokenizer`` must give offsets, and its tokens must be the model's.
-    """
+def tokenize(tokenizer, context: str) -> tuple[list[str], list[tuple[int, int]]]:
+    """The tokens of ``context``, decoded one by one, and their character
+    offsets. ``tokenizer`` must give offsets, and its tokens must be the
+    model's."""
     encoding = tokenizer(context, return_offsets_mapping=True)
-    offsets = encoding["offset_mapping"]
     tokens = [
         tokenizer.decode([i], clean_up_tokenization_spaces=False)
         for i in encoding["input_ids"]
     ]
+    return tokens, encoding["offset_mapping"]
+
+
+def units(
+    tokens: list[str],
+    offsets: list[tuple[int, int]],
+    start: int,
+    sentences: range | None = None,
+) -> list[list[int]]:
+    """The read-out units of a tokenized context from character ``start`` on
+    (DESIGN.md, Units): each word is one unit at its last token, and within
+    the characters ``sentences`` (R) each sentence is one unit of all its
+    tokens."""
 
     def in_sentences(p: int) -> bool:
-        return (
-            sentences is not None and sentences.start <= offsets[p][0] < sentences.end
-        )
+        return sentences is not None and offsets[p][0] in sentences
 
     out = [
         [p] for p in word_ends(tokens) if offsets[p][0] >= start and not in_sentences(p)
@@ -182,10 +166,7 @@ def units(
         inside, sentence_ids([tokens[p] for p in inside]), strict=True
     ):
         grouped.setdefault(sentence, []).append(p)
-    out = sorted(out + list(grouped.values()))
-    if end is not None:
-        out = [unit for unit in out if offsets[unit[0]][0] < end]
-    return out
+    return sorted(out + list(grouped.values()))
 
 
 def top_per_unit(
@@ -229,27 +210,17 @@ def read_out(
     lens: jlens.JacobianLens,
     context: str,
     band: tuple[int, int],
-    positions: list[int] | None = None,
-    skip: str = "",
-    top_n: int = 200,
-    units: list[list[int]] | None = None,
+    units: list[list[int]],
+    q_units: int,
 ) -> LatentReadout:
-    """Read out the lens at every layer of ``band`` (inclusive) and at
-    ``positions`` (default: every word end of ``context`` after the leading
-    text ``skip``, e.g. the opening template of the user turn).
-
-    With ``units`` (see :func:`units`), each unit is read out as one: at each
-    layer, a token scores its highest log-probability over the unit's
-    positions. Max, not mean: an intermediate often peaks at one word and
-    would be averaged away over a sentence.
-
-    ``top_n`` raw tokens are kept per unit and layer: enough for word-like
-    ones to remain once the rest is filtered out.
-    """
+    """Read out the lens at every layer of ``band`` (inclusive), unit by unit
+    (see :func:`units`): at each layer, a token scores its highest
+    log-probability over the unit's positions. Max, not mean: an
+    intermediate often peaks at one word and would be averaged away over a
+    sentence. The first ``q_units`` units are Q's."""
     layers = list(range(band[0], band[1] + 1))
     input_ids = model.encode(context, max_length=MAX_SEQ_LEN)
-    n = input_ids.shape[-1]
-    if n >= MAX_SEQ_LEN:
+    if input_ids.shape[-1] >= MAX_SEQ_LEN:
         raise ValueError(f"context reaches MAX_SEQ_LEN={MAX_SEQ_LEN} tokens")
 
     vocab: dict[int, str] = {}
@@ -259,34 +230,18 @@ def read_out(
             vocab[i] = model.tokenizer.decode([i], clean_up_tokenization_spaces=False)
         return vocab[i]
 
-    context_tokens = [decode(i) for i in input_ids[0].tolist()]
-    if units is None:
-        if positions is None:
-            start = skipped_tokens(context_tokens, skip)
-            positions = [p for p in word_ends(context_tokens) if p >= start]
-        read_units = [[p % n] for p in positions]
-    else:
-        read_units = [[p % n for p in unit] for unit in units]
-
     with ActivationRecorder(model.layers, at=layers) as recorder:
         model.forward(input_ids)
         activations = {layer: recorder.activations[layer][0] for layer in layers}
 
-    top: list[list[list[str]]] = [[] for _ in read_units]
+    top: list[list[list[str]]] = [[] for _ in units]
     for layer in layers:
         # One transport per layer: the Jacobian moves to the device once.
         transported = lens.transport(activations.pop(layer).float(), layer)
-        ranked = top_per_unit(transported, read_units, model.unembed, top_n)
+        ranked = top_per_unit(transported, units, model.unembed, TOP_N)
         for u, ids in enumerate(ranked):
             top[u].append([decode(i) for i in ids])
-    return LatentReadout(
-        context,
-        context_tokens,
-        [unit[-1] for unit in read_units],
-        layers,
-        top,
-        None if units is None else read_units,
-    )
+    return LatentReadout(context, top, q_units)
 
 
 class Segments(NamedTuple):
@@ -300,17 +255,16 @@ class Segments(NamedTuple):
 
 def segments(tokenizer, context: str, q: str, r: str) -> Segments:
     """The units of ``context`` from Q on (see :func:`units`), split at Q's
-    and R's ends."""
+    and R's ends by where each unit starts."""
     q_start = context.index(q)
     q_end = q_start + len(q)
     r_start = context.index(r, q_end)
     r_end = r_start + len(r)
-    return Segments(
-        q=units(tokenizer, context, q_start, end=q_end),
-        before_r=units(tokenizer, context, q_end, end=r_start),
-        r=units(tokenizer, context, r_start, Span(r_start, r_end), end=r_end),
-        after_r=units(tokenizer, context, r_end),
-    )
+    tokens, offsets = tokenize(tokenizer, context)
+    split = Segments([], [], [], [])
+    for unit in units(tokens, offsets, q_start, range(r_start, r_end)):
+        split[bisect_right((q_end, r_start, r_end), offsets[unit[0]][0])].append(unit)
+    return split
 
 
 def align_to_advisor(advisor: Segments, editor: Segments) -> list[list[int]]:
@@ -330,7 +284,7 @@ def align_to_advisor(advisor: Segments, editor: Segments) -> list[list[int]]:
 def read_span(
     model: jlens.LensModel,
     lens: jlens.JacobianLens,
-    fmt: TranscriptFormat,
+    fmt: Qwen35Format,
     kind: Kind,
     q: str,
     r: str | None = None,
@@ -349,18 +303,20 @@ def read_span(
         context = fmt.editor_prompt(q, r)
     else:
         context = fmt.decision_prompt(q, r)
-    start = context.index(q)
     if kind == "explanation" and r is not None and editor:
+        own = segments(model.tokenizer, context, q, r)
         span_units = align_to_advisor(
-            segments(model.tokenizer, fmt.decision_prompt(q, r), q, r),
-            segments(model.tokenizer, context, q, r),
+            segments(model.tokenizer, fmt.decision_prompt(q, r), q, r), own
         )
+        q_units = len(own.q)
     else:
+        start = context.index(q)
+        q_end = start + len(q)
         sentences = None
         if kind == "explanation" and r is not None:
-            r_start = context.index(r, start + len(q))
-            sentences = Span(r_start, r_start + len(r))
-        span_units = units(model.tokenizer, context, start, sentences)
-    readout = read_out(model, lens, context, band, units=span_units)
-    readout.q_units = len(units(model.tokenizer, context, start, end=start + len(q)))
-    return readout
+            r_start = context.index(r, q_end)
+            sentences = range(r_start, r_start + len(r))
+        tokens, offsets = tokenize(model.tokenizer, context)
+        span_units = units(tokens, offsets, start, sentences)
+        q_units = sum(offsets[unit[0]][0] < q_end for unit in span_units)
+    return read_out(model, lens, context, band, span_units, q_units)

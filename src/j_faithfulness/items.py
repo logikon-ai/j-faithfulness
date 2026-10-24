@@ -3,63 +3,35 @@ DailyDilemmas adapter."""
 
 from __future__ import annotations
 
-import ast
 import csv
 import random
 from dataclasses import dataclass
-
-from j_faithfulness.formats import FORMATS
 
 
 @dataclass(frozen=True)
 class Item:
     id: str
     q: str  # the decision prompt, ending in the forced choice
-    options: list[str]  # labels: A, B, …
-    actions: dict[str, str]  # label → action
+    options: dict[str, str]  # label → action, in option order
     domain: str
     source: str  # the dataset the item comes from
     source_revision: str
 
 
 def to_row(item: Item) -> dict:
-    """The item as a dataset row. Per-option fields become one list in option
-    order, so the row's schema doesn't depend on the option labels and rows
-    from different sources share one dataset."""
+    """The item as a dataset row. The options become a list in option order,
+    so the row's schema doesn't depend on the option labels and rows from
+    different sources share one dataset."""
     return {
         "id": item.id,
         "q": item.q,
-        "options": [{"label": o, "action": item.actions[o]} for o in item.options],
+        "options": [
+            {"label": label, "action": action} for label, action in item.options.items()
+        ],
         "domain": item.domain,
         "source": item.source,
         "source_revision": item.source_revision,
     }
-
-
-def from_row(row: dict) -> Item:
-    """The item back from a dataset row; other fields of the row are ignored."""
-    options = row["options"]
-    return Item(
-        id=row["id"],
-        q=row["q"],
-        options=[o["label"] for o in options],
-        actions={o["label"]: o["action"] for o in options},
-        domain=row["domain"],
-        source=row["source"],
-        source_revision=row["source_revision"],
-    )
-
-
-def row_transcript(row: dict) -> str:
-    """The raw transcript of a dataset row, rebuilt by the row's model's
-    format. Raises ValueError if that format is no longer the one recorded in
-    the row: its strings would differ from the ones the model saw."""
-    meta = row["metadata"]
-    fmt = FORMATS[meta["model_id"]]
-    if fmt.name != meta["format"]:
-        raise ValueError(f"row has format {meta['format']!r}, model has {fmt.name!r}")
-    # A capped R already holds the cap mark, so the format mustn't add it.
-    return fmt.transcript(row["q"], row["d"], row["e"], row["r"])
 
 
 DAILY_DILEMMAS = "kellycyy/daily_dilemmas"
@@ -84,26 +56,13 @@ def daily_dilemmas(rows: list[dict]) -> list[Item]:
             Item(
                 id=f"dd-{idx}",
                 q=q,
-                options=["A", "B"],
-                actions={"A": do["action"], "B": dont["action"]},
+                options={"A": do["action"], "B": dont["action"]},
                 domain=do["topic_group"],
                 source=DAILY_DILEMMAS,
                 source_revision=DAILY_DILEMMAS_REVISION,
             )
         )
     return items
-
-
-def daily_dilemmas_values(rows: list[dict]) -> dict[str, list[str]]:
-    """The annotated values of each dilemma's two options, by item id, in
-    order and with repeats removed: a reference for what J should surface."""
-    values: dict[str, list[str]] = {}
-    for row in rows:
-        found = values.setdefault(f"dd-{row['dilemma_idx']}", [])
-        for value in ast.literal_eval(row["values_aggregated"]):
-            if value not in found:
-                found.append(value)
-    return values
 
 
 def daily_dilemmas_rows(token: str | None = None) -> list[dict]:

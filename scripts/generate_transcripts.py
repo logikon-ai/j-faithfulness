@@ -30,19 +30,14 @@ def _():
     from datasets.info import DatasetInfosDict
     from huggingface_hub import DatasetCard, HfApi
 
-    from j_faithfulness.formats import FORMATS
-    from j_faithfulness.items import (
-        load_daily_dilemmas,
-        row_transcript,
-        split,
-        to_row,
-    )
+    from j_faithfulness.formats import QWEN35, row_transcript
+    from j_faithfulness.items import load_daily_dilemmas, split, to_row
 
     return (
         DatasetCard,
         DatasetInfosDict,
-        FORMATS,
         HfApi,
+        QWEN35,
         Template,
         datasets,
         datetime,
@@ -129,8 +124,8 @@ def _(config, os):
 
 
 @app.cell
-def _(FORMATS, config):
-    transcript_format = FORMATS[config["model_id"]]
+def _(QWEN35):
+    transcript_format = QWEN35
     transcript_format.name
     return (transcript_format,)
 
@@ -342,10 +337,14 @@ def _(
         )
         with open(r_path, "w") as _f:
             _json.dump({"ids": [i.id for i in items], "r": r_generated}, _f)
-    # An R that didn't reach </think> is closed with "..." (DESIGN.md, Generation
-    # and cache). The model puts a newline before </think>; the format adds it.
+    # An R that didn't reach </think> is closed with CAP_MARK, which counts
+    # as part of R (DESIGN.md, Generation and cache). The model puts a newline
+    # before </think>; the format adds it.
+    CAP_MARK = "..."
     reasonings = [
-        (text.removesuffix("\n"), False) if stop == think_end else (text, True)
+        (text.removesuffix("\n"), False)
+        if stop == think_end
+        else (text + CAP_MARK, True)
         for text, stop in r_generated
     ]
     {
@@ -367,7 +366,9 @@ def _(
 ):
     # D needs no sampling: the most likely option letter.
     def decide(prompts, title, batch_size):
-        probs = option_probs(prompts, [i.options for i in items], title, batch_size)
+        probs = option_probs(
+            prompts, [list(i.options) for i in items], title, batch_size
+        )
         return [(max(p, key=p.get), p) for p in probs]
 
     decisions_off = decide(
@@ -377,8 +378,8 @@ def _(
     )
     decisions_on = decide(
         [
-            transcript_format.decision_prompt(i.q, r, capped)
-            for i, (r, capped) in zip(items, reasonings, strict=True)
+            transcript_format.decision_prompt(i.q, r)
+            for i, (r, _) in zip(items, reasonings, strict=True)
         ],
         "D, thinking on",
         R_PROMPT_BATCH_SIZE,
@@ -423,10 +424,8 @@ def _(
     )
     explanations_on = sample(
         [
-            transcript_format.explanation_prompt(i.q, d, r, capped)
-            for i, (d, _), (r, capped) in zip(
-                items, decisions_on, reasonings, strict=True
-            )
+            transcript_format.explanation_prompt(i.q, d, r)
+            for i, (d, _), (r, _) in zip(items, decisions_on, reasonings, strict=True)
         ],
         eos,
         E_CAP,
@@ -487,14 +486,13 @@ def _(
             (None, None, d_off, p_off, e_off, stop_off),
             (r, r_capped, d_on, p_on, e_on, stop_on),
         ):
-            _text = transcript_format.transcript(item.q, _d, _e, _r, bool(_capped))
-            # The stored R is the text between the think tags, cap mark
-            # included, as the model saw it.
-            _spans = transcript_format.parse(_text)
+            _text = transcript_format.transcript(item.q, _d, _e, _r)
             rows.append(
                 {
                     **to_row(item),
-                    "r": None if _r is None else _text[slice(*_spans.r)],
+                    # The text between the think tags, cap mark included, as
+                    # the model saw it.
+                    "r": _r,
                     "d": _d,
                     # In option order, like the row's options.
                     "d_probs": [_p[o] for o in item.options],
@@ -542,7 +540,7 @@ model:
 
 ```python
 from datasets import load_dataset
-from j_faithfulness.items import row_transcript  # pip install git+https://github.com/logikon-ai/j-faithfulness
+from j_faithfulness.formats import row_transcript  # pip install git+https://github.com/logikon-ai/j-faithfulness
 
 rows = load_dataset("$repo_id", split="train", revision="<commit>")
 rows = rows.filter(lambda row: row["metadata"]["model_id"] == "<model id>")

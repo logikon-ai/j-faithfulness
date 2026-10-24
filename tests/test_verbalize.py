@@ -2,12 +2,11 @@ import math
 
 import pytest
 
+from j_faithfulness import verbalize as verbalize_module
 from j_faithfulness.lens import LatentReadout
 from j_faithfulness.verbalize import (
-    Row,
     document,
     echoes,
-    fence,
     grade,
     is_english,
     is_latin,
@@ -18,16 +17,34 @@ from j_faithfulness.verbalize import (
 )
 
 
-def readout(*positions, context="", tokens=None):
-    """``positions[i][j]``: ranked tokens at position i, layer j; ``tokens``
-    the context token at each position."""
+def readout(*units, context="", q_units=None):
+    """``units[i][j]``: ranked tokens at unit i, layer j; all units are Q's
+    unless ``q_units`` says otherwise."""
     return LatentReadout(
         context=context,
-        context_tokens=tokens or [f"w{i}" for i in range(len(positions))],
-        positions=list(range(len(positions))),
-        layers=list(range(len(positions[0]))),
-        top=[[list(ranked) for ranked in p] for p in positions],
+        top=[[list(ranked) for ranked in unit] for unit in units],
+        q_units=len(units) if q_units is None else q_units,
     )
+
+
+def blank(n):
+    """A role that carries no words at any of ``n`` units: grading against it
+    leaves the scores at TF × IDF."""
+    return readout(*[[[]] for _ in range(n)])
+
+
+@pytest.fixture
+def thresholds(monkeypatch):
+    """Sets MIN_TF and MIN_SCORE for one test; each call starts from the
+    module's values."""
+
+    def set_thresholds(
+        min_tf=verbalize_module.MIN_TF, min_score=verbalize_module.MIN_SCORE
+    ):
+        monkeypatch.setattr(verbalize_module, "MIN_TF", min_tf)
+        monkeypatch.setattr(verbalize_module, "MIN_SCORE", min_score)
+
+    return set_thresholds
 
 
 def test_is_word_like():
@@ -82,9 +99,9 @@ def test_echoes_suffixes_of_short_words():
 
 def test_is_english():
     for w in ["Italy", "Shakespeare", "Nairobi", "venom", "avocado", "bees"]:
-        assert is_english(w, 2.5), w
+        assert is_english(w), w
     for w in ["akespeare", "dney", "useum", "hoặc", "atau", "keduanya"]:
-        assert not is_english(w, 2.5), w
+        assert not is_english(w), w
 
 
 def test_tf_idf_leaves_out_the_scored_position():
@@ -106,8 +123,7 @@ def test_tf_idf_over_q_alone():
     q0 = [["the", "Italy"]]
     q1 = [["the", "euro"]]
     r_sentence = [["Italy", "the"]]
-    r = readout(q0, q1, r_sentence)
-    r.q_units = 2
+    r = readout(q0, q1, r_sentence, q_units=2)
     tfs = tf_idf(r)
     # Q's units score against Q's other unit: 1 document.
     assert tfs[0]["Italy"] == pytest.approx((0.5, math.log(2 / 1)))
@@ -127,20 +143,24 @@ def generic_and_specific():
     return readout(*[[["the", w], ["the", w]] for w in specific])
 
 
-def test_verbalize_ranks_by_tf_idf_and_drops_generic_words():
-    j = verbalize(generic_and_specific(), min_tf=0.5, min_score=0.1)
-    assert j == [Row(0, ["Italy"]), Row(1, ["euro"]), Row(2, ["Rome"])]
+def test_verbalize_ranks_by_tf_idf_and_drops_generic_words(thresholds):
+    thresholds(min_tf=0.5, min_score=0.1)
+    j = verbalize(generic_and_specific(), [blank(4)])
+    assert j == [["Italy"], ["euro"], ["Rome"]]
 
 
-def test_verbalize_min_tf_and_min_score():
+def test_verbalize_min_tf_and_min_score(thresholds):
     r = generic_and_specific()
     # Specific words: tf 1/2 + 1/2 = 1, idf log(7/1) ≈ 1.95.
-    assert verbalize(r, min_tf=1.5, min_score=0.01) == []
-    assert verbalize(r, min_score=2.0) == []
-    assert len(verbalize(r, min_score=1.9)) == 3
+    thresholds(min_tf=1.5, min_score=0.01)
+    assert verbalize(r, [blank(4)]) == []
+    thresholds(min_score=2.0)
+    assert verbalize(r, [blank(4)]) == []
+    thresholds(min_score=1.9)
+    assert len(verbalize(r, [blank(4)])) == 3
 
 
-def test_verbalize_drops_context_echo():
+def test_verbalize_drops_context_echo(thresholds):
     r = readout(
         [["Italy", "boots"]],
         [["euro"]],
@@ -148,10 +168,8 @@ def test_verbalize_drops_context_echo():
         context="Does the country shaped like a boot use the euro?",
     )
     # boots echoes boot (suffix); euro is in the context.
-    assert verbalize(r, min_tf=0.5, min_score=0.1) == [
-        Row(0, ["Italy"]),
-        Row(2, ["Portugal"]),
-    ]
+    thresholds(min_tf=0.5, min_score=0.1)
+    assert verbalize(r, [blank(3)]) == [["Italy"], ["Portugal"]]
 
 
 def test_words():
@@ -162,11 +180,6 @@ def test_words():
         "euro",
         "italy",
     }
-
-
-def test_fence():
-    j = [Row(3, ["a", "b"]), Row(7, ["c"])]
-    assert fence(j) == "<latentthought>\na, b.\nc.\n</latentthought>"
 
 
 def test_grade_against_the_strongest_role():
@@ -202,13 +215,12 @@ def test_grade_needs_the_same_number_of_units():
         grade(a, b)
 
 
-def test_verbalize_graded_against_another_role():
+def test_verbalize_graded_against_another_role(thresholds):
     decide = readout([["Answer", "fair"]], [["Answer", "kind"]])
     copy = readout([["Answer"]], [["Answer"]])
     # Answer is as strong in copy: score 0. fair and kind: tf 1/2, not in
     # copy, idf log(2/1): score 0.35.
-    assert verbalize(decide, [copy], min_tf=0.5, min_score=0.3) == [
-        Row(0, ["fair"]),
-        Row(1, ["kind"]),
-    ]
-    assert verbalize(decide, [copy], min_tf=0.5, min_score=0.4) == []
+    thresholds(min_tf=0.5, min_score=0.3)
+    assert verbalize(decide, [copy]) == [["fair"], ["kind"]]
+    thresholds(min_tf=0.5, min_score=0.4)
+    assert verbalize(decide, [copy]) == []
