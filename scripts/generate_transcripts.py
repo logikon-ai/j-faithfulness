@@ -27,6 +27,7 @@ def _():
     import marimo as mo
     import torch
     import transformers
+    from datasets.info import DatasetInfosDict
     from huggingface_hub import DatasetCard, HfApi
 
     from j_faithfulness.formats import FORMATS
@@ -39,6 +40,7 @@ def _():
 
     return (
         DatasetCard,
+        DatasetInfosDict,
         FORMATS,
         HfApi,
         Template,
@@ -583,18 +585,32 @@ def _(HfApi, config, datasets, hf_token, rows):
 
 
 @app.cell
-def _(CARD, DatasetCard, config, datasets, hf_token, merged_rows, rows):
+def _(
+    CARD,
+    DatasetCard,
+    DatasetInfosDict,
+    config,
+    datasets,
+    hf_token,
+    merged_rows,
+    rows,
+):
     # Rows from before generated_at existed get null there: Arrow merges the
     # metadata structs.
-    datasets.Dataset.from_list(merged_rows).push_to_hub(
+    dataset = datasets.Dataset.from_list(merged_rows)
+    dataset.push_to_hub(
         config["repo_id"],
         token=hf_token,
         private=True,
         commit_message=f"{len(rows) // 2} dev items from {config['model_id']}",
     )
-    # The card goes on top of the README push_to_hub wrote, keeping its YAML:
-    # the schema there feeds the dataset viewer.
+    # The card goes on top of the README push_to_hub wrote, keeping its split
+    # sizes. Its features are rewritten from the data: push_to_hub keeps an
+    # existing card's features, and load_dataset fails on a stale schema.
     card = DatasetCard.load(config["repo_id"], token=hf_token)
+    infos = DatasetInfosDict.from_dataset_card_data(card.data)
+    infos["default"].features = dataset.features
+    infos.to_dataset_card_data(card.data)
     card.data.license = "other"
     card.data.language = ["en"]
     card.data.pretty_name = "j-faithfulness transcripts"

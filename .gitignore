@@ -220,4 +220,4 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Results written on molab by scripts/discrimination.py
-discrimination.json
+discrimination*.json

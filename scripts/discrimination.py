@@ -84,7 +84,7 @@ def _(mo):
 def _(datasets):
     MODEL_ID = "Qwen/Qwen3.5-4B"
     DATASET = "ggbetz/cached-reasoning-records"
-    SHA = "dc44f7efbee7a35b04ccf25b947d6145030088b1"
+    SHA = "2d98d41c2e0395eeb871cc3782de24975c54f5d0"
     N_ITEMS = 50
     DOSES = [0.0, 0.25, 0.5, 0.75, 0.9, 1.0]
     # Distractor and filler pairs per case: 10 items give little data, and
@@ -93,7 +93,8 @@ def _(datasets):
     # Cases whose reversed J has fewer rows are left out: the candidates are
     # cut to the shorter J, and a few rows say little.
     MIN_ROWS = 5
-    OUT = "discrimination.json"
+    # One file per model, so a run doesn't overwrite another model's.
+    OUT = f"discrimination_{MODEL_ID.split('/')[-1]}.json"
 
     records = datasets.load_dataset(DATASET, revision=SHA, split="train")
     rows = [row for row in records if row["metadata"]["model_id"] == MODEL_ID]
