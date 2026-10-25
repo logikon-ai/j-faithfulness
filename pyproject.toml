@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "j-faithfulness"
+version = "0.1.0"
+description = "Use the Jacobian lens to test whether an LLM's rationales are faithful to its latent reasoning"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+dependencies = [
+    # Unmaintained reference implementation, not on PyPI: pin a commit.
+    "jlens @ git+https://github.com/anthropics/jacobian-lens.git@581d398613e5602a5af361e1c34d3a92ea82ba8e",
+    "torch",
+    "transformers>=5.5",
+    "huggingface_hub",
+    "wordfreq>=3.1.1",
+    "pyyaml>=6.0.3",
+]
+
+[dependency-groups]
+dev = [
+    "altair>=6.2.2",
+    "datasets>=5.1.0",
+    "marimo",
+    "pytest",
+    "ruff",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/j_faithfulness"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.format]
+exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# marimo displays a cell's trailing expression.
+"scripts/*" = ["B018"]

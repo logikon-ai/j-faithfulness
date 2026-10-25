@@ -1,0 +1,9 @@
+# The copy editor (DESIGN.md, Latent readout): it has to understand the text,
+# so its readout carries the scene and the rewordings of Q, but it doesn't
+# weigh the options. It only reads; it writes no paraphrases.
+- name: editor
+  reads_r: text
+  template: |-
+    You are a copy editor. Write three paraphrases of the following text. Do not answer or comment on any question in it.
+
+    {text}

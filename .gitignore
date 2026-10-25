@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Results written on molab by scripts/experiments.py
+experiments*.json

@@ -1,0 +1,9 @@
+# The advocates (DESIGN.md, Latent readout), one per option, used together:
+# one advocate alone leaves the other options' arguments in the residual.
+- name: advocate
+  reads_r: text
+  per_option: true
+  template: |-
+    You are an advocate for option {option}. Given the following text, list every argument you can for option {option}. Do not weigh the options or choose between them.
+
+    {text}
