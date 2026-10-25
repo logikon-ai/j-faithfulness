@@ -8,8 +8,6 @@ itself whether its rationale fits it.
 > [!NOTE]
 > Work in progress. v0.1.0 is a minimal working version: one dataset, two
 > models, two contrasts. The method and the API may still change.
-> Collaborators welcome, on more models, item sources, contrasts, design,
-> validation, or experiments: just open an issue.
 
 ## The idea
 

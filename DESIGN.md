@@ -372,64 +372,74 @@ signal levels, the number of draws and the minimum row count.
 
 ## Status
 
-Each model judges its own data, at the copy editor's grain, on the same 50
-items, with 4 draws, graded J and the editor reading R as text. At full
-signal. These runs predate the current readout: in the reasoning case the
-editor read under the advisor's thinking template, the word filter was
-one-sided, and both sides took their own role's IDF. They are rerun.
+Each model judges its own data on the same 50 items, with 4 draws, under
+two contrasts: the copy editor and the advocates. At full signal. The
+27B's band is the 4B's scaled to depth (16–42), not retuned. The trials
+and the record of each run are attached to the v0.1.0 release.
 
 **Qwen3.5-4B.**
 
-| Case | foreign | reversed | reversed, foreign X | fit | accuracy with own X / foreign X |
-|---|---|---|---|---|---|
-| explanation, thinking off | 1.92 | 0.42 | −0.08 | +0.50 ± 0.08 | 84% / 43% |
-| explanation, thinking on | 1.15 | 0.32 | 0.07 | +0.25 ± 0.06 | 78% / 56% |
-| reasoning, thinking on | 0.52 | 0.09 | 0.02 | +0.07 ± 0.03 | 73% / 53% |
+| Case | Contrast | foreign | reversed | reversed, foreign X | fit | accuracy with own X / foreign X |
+|---|---|---|---|---|---|---|
+| explanation, thinking off | editor | 1.88 | 0.37 | −0.18 | +0.55 ± 0.08 | 78% / 37% |
+| | advocates | 1.95 | 0.24 | −0.02 | +0.26 ± 0.06 | 69% / 43% |
+| explanation, thinking on | editor | 1.21 | 0.28 | −0.05 | +0.33 ± 0.06 | 76% / 51% |
+| | advocates | 1.20 | 0.19 | 0.10 | +0.09 ± 0.07 | 64% / 58% |
+| reasoning, thinking on | editor | 0.51 | 0.15 | 0.06 | +0.09 ± 0.04 | 77% / 59% |
+| | advocates | 0.49 | 0.10 | 0.04 | +0.06 ± 0.03 | 67% / 55% |
 
-- **Explanations respond to the latent deliberation.** The fit is about 7
-  standard errors above 0 with thinking off and 4 with thinking on, and the
-  reversed condition rises with the signal.
+**Qwen3.5-27B.**
+
+| Case | Contrast | foreign | reversed | reversed, foreign X | fit | accuracy with own X / foreign X |
+|---|---|---|---|---|---|---|
+| explanation, thinking off | editor | 4.42 | 1.07 | −0.22 | +1.29 ± 0.12 | 88% / 38% |
+| | advocates | 4.57 | 0.60 | −0.14 | +0.73 ± 0.12 | 69% / 37% |
+| explanation, thinking on | editor | 3.91 | 0.69 | −0.07 | +0.76 ± 0.10 | 82% / 45% |
+| | advocates | 3.56 | 0.64 | 0.32 | +0.32 ± 0.08 | 85% / 73% |
+| reasoning, thinking on | editor | 3.43 | 1.41 | 0.75 | +0.66 ± 0.08 | 100% / 95% |
+| | advocates | 3.31 | 0.99 | 0.62 | +0.37 ± 0.08 | 92% / 91% |
+
+**At the copy editor's grain.**
+- **Explanations respond to the latent deliberation** in both models: the
+  fit is 5 to 11 standard errors above 0. Reasoning does too in the 27B
+  (8 standard errors), and barely in the 4B (2).
 - **It is a fraction of the topic effect.** Most of what makes J
   recognizable against a foreign J is topic.
-- **Reasoning shows a small fit,** about 2.6 standard errors above 0. The
-  reasoning J is read over Q alone, R is long, and the model is small; the
-  data can't tell which of these keeps it small.
-- **Per item, the fit is noisy** (SD about 0.5 in both explanation
-  cases). At full signal the draws differ only in row count, so they are
-  not replicates. A per-item score would need the dose curve or more draws.
-
-**Qwen3.5-27B,** with the 4B's band scaled to depth (16–42), not retuned.
-
-| Case | foreign | reversed | reversed, foreign X | fit | accuracy with own X / foreign X |
-|---|---|---|---|---|---|
-| explanation, thinking off | 4.58 | 1.39 | −0.18 | +1.57 ± 0.13 | 92% / 41% |
-| explanation, thinking on | 3.72 | 1.00 | 0.23 | +0.77 ± 0.09 | 96% / 63% |
-| reasoning, thinking on | 3.49 | 1.54 | 0.62 | +0.92 ± 0.08 | 100% / 91% |
-
-- **All three cases respond to the latent deliberation,** reasoning
-  included. The fits are 8 to 12 standard errors above 0.
 - **The control depends on the kind of X.** Another item's R pulls the
   model towards J: R deliberates, and any J holds deliberation. Another
-  item's E pushes it away. The two J's are read over nearly the same span,
-  and with their own X both score about the same (1.39 and 1.54). The gap
-  between their fits comes from the control. So fits compare within one
-  kind of X, not between R and E.
-- **Two curves dip at full signal.** The reversed condition falls from 1.65
-  at a signal of 0.75 to 1.39 with thinking off, and from 1.17 to 1.00
-  with thinking on. That is about 2 standard errors; the fit, read at full
-  signal, inherits it.
+  item's E doesn't. So fits compare within one kind of X, not between R
+  and E.
+
+**At the advocates' grain.**
+- **Every fit is smaller, and none vanishes in the 27B.** Against the
+  advocates, J holds what weighing adds over producing arguments. The 27B's
+  fits stay 4 to 6 standard errors above 0. In the 4B only the explanation
+  with thinking off clearly fits (4 standard errors); the other two are
+  within 2.
+- **Responding to the specific deliberation is weaker than responding to
+  a deliberation having taken place.** The advocates' fit is 40 to 60% of
+  the editor's in the 27B.
 
 **Across the two models.**
-- **The 27B is more j-faithful in every case.** It is also the better
-  reader: the foreign condition, which needs no responsiveness, rises
-  about threefold, and more for reasoning. The ratio of the fit to the
-  foreign condition (see Next) is alike for explanations (0.26 and 0.34
-  with thinking off, 0.22 and 0.21 with thinking on) and doubles for
-  reasoning (0.13 and 0.26). The judge ablation separates the reader from
-  the rationales.
-- **Explanations fit better with thinking off,** in both models. The J
-  with thinking on has rows read over R, so the two cases differ in J as
-  well as in E.
+- **The 27B is more j-faithful in every case and at both grains.** It is
+  also the better reader: the foreign condition, which needs no
+  responsiveness, rises about threefold, and more for reasoning. The ratio
+  of the fit to the foreign condition (see Next), at the editor's grain,
+  is alike with thinking off (0.29 in both) and for reasoning (0.18 and
+  0.19), and lower in the 27B with thinking on (0.27 and 0.19). The
+  judge ablation separates the reader from the rationales.
+- **Explanations fit better with thinking off,** in both models and at
+  both grains. The J with thinking on has rows read over R, so the two
+  cases differ in J as well as in E.
+
+**Open.**
+- **The 27B's fit dips at full signal** at the editor's grain: it peaks at
+  a signal of 0.5 to 0.75 (1.79, 1.13, 0.78) and falls to 1.29, 0.76 and
+  0.66 at full signal. The fit, read at full signal, understates what the
+  curve shows. The 4B's curves don't dip.
+- **Per item, the fit is noisy** (SD 0.4 to 0.55 for explanations). At
+  full signal the draws differ only in row count, so they are not
+  replicates. A per-item score would need the dose curve or more draws.
 
 
 ## Limits
@@ -457,24 +467,13 @@ one-sided, and both sides took their own role's IDF. They are rerun.
 
 ## Next
 
-1. **The advocates as contrast.** A contrast that deliberates in part
-   leaves a finer deliberation residual, which tests whether X responds to
-   the specific deliberation. The advocates leave what weighing adds over
-   producing arguments: comparing, balancing and resolving them. A pilot
-   on Qwen3.5-27B (20 items, before the current readout) gave positive
-   fits in all three cases, smaller than the editor's. The reversed
-   condition matched the editor's; the control rose, so against the
-   advocates J is recognized largely by its register, whatever X says.
-   The rerun with the current readout is pending. Roles bound to one method
-   of deciding, such as maximizing expected utility, are further
-   candidates.
-2. **Judge ablation.** Replace the model by a fixed judge, a large model
+1. **Judge ablation.** Replace the model by a fixed judge, a large model
    from another family, and keep everything else the same. Its fit is
    responsiveness as detected by an outside reader. That is not
    j-faithfulness, but it is comparable across models. If the fixed judge
    finds more than the model, the model missed what X carries. If it finds
    less, the model reads its own rationales better than an outsider does.
-3. **Normalization.** The fit depends on how well the lens reads a model:
+2. **Normalization.** The fit depends on how well the lens reads a model:
    noisy rows lower it. The log-odds of the foreign condition measure how
    recognizable J is at all, and a poor lens lowers them too. So the ratio
    of the fit to them makes models with different lenses more comparable.
