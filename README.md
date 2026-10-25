@@ -1,4 +1,4 @@
-# j-faithfulness
+# 💭🔬 j-faithfulness
 
 Does an LLM's rationale respond to the deliberation in its latent state?
 j-faithfulness reads that deliberation out with the
