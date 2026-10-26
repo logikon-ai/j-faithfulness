@@ -479,6 +479,14 @@ and the record of each run are attached to the v0.1.0 release.
    of the fit to them makes models with different lenses more comparable.
    It corrects only as far as the lens reads topic and deliberation equally
    well.
+3. **Lens ablation.** Read J with the
+   [J++ lens](https://www.lesswrong.com/posts/nc9dHfcB22JdMzGbr/j-lens-jacobian-filtering-enables-more-faithful-workspace)
+   and keep everything else the same. The J++ lens reads latent variables
+   more faithfully than the Jacobian lens, so it tests how far the fits
+   depend on what J misses. On one model and one set of transcripts it also
+   tests the normalization: the ratio should hold where the fit moves. No
+   J++ lens exists for Qwen3.5-4B or 27B; one would be fitted, or the
+   ablation run on a model that has one.
 
 
 ## Code
